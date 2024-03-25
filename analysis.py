@@ -35,7 +35,7 @@ keys = [
 ]
 
 if __name__ == "__main__":
-    file_list = glob.glob("./results/*.csv")
+    file_list = sorted(glob.glob("./results/*.csv"))
     new_keys = []
     for k in keys:
         new_keys.append(f"{k}_mean")

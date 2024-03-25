@@ -45,13 +45,13 @@ flags.DEFINE_integer("num_trajectories", 1000, "The number of trajectories to co
 flags.DEFINE_float("alpha", 0.001, "Alpha value.")
 flags.DEFINE_float("target_roi", 5.0, "Target ROI value.")
 
-flags.DEFINE_bool("basic_rl", False, "Whether run basic rl algorithm.")
-flags.DEFINE_bool("unconstrained", False, "Whether run unconstrained optidice.")
-flags.DEFINE_bool("vanilla_constrained", False, "Whether run vanilla constrained optidice.")
-flags.DEFINE_bool(
-    "conservative_constrained", False, "Whether run conservative constrained optidice."
+flags.DEFINE_integer("basic_rl", 0, "Whether run basic rl algorithm.")
+flags.DEFINE_integer("unconstrained", 0, "Whether run unconstrained optidice.")
+flags.DEFINE_integer("vanilla_constrained", 0, "Whether run vanilla constrained optidice.")
+flags.DEFINE_integer(
+    "conservative_constrained", 0, "Whether run conservative constrained optidice."
 )
-flags.DEFINE_bool("roidice", True, "Whether run ROIDICE.")
+flags.DEFINE_integer("roidice", 1, "Whether run ROIDICE.")
 
 FLAGS = flags.FLAGS
 
@@ -96,7 +96,10 @@ keys = [
     "elapsed_time",
 ]
 
+
 def main(unused_argv):
+    os.makedirs(save_path, exist_ok=True)
+
     """Main function."""
     num_states, num_actions, num_costs, gamma = 50, 4, 1, 0.95
     cost_thresholds = np.ones(num_costs) * FLAGS.cost_thresholds
@@ -149,7 +152,13 @@ def main(unused_argv):
         target_roi = FLAGS.target_roi
         for num_trajectories in [FLAGS.num_trajectories]:
             logging.info(bold_red + "==========================" + reset)
-            logging.info(red + "* seed=%d, num_trajectories=%d" + reset, seed, num_trajectories)
+            logging.info(
+                red + "* alpha=%f, target_roi=%f, seed=%d, num_trajectories=%d" + reset,
+                alpha,
+                target_roi,
+                seed,
+                num_trajectories,
+            )
 
             # Generate trajectory
             trajectory = mdp_util.generate_trajectory(
@@ -170,6 +179,7 @@ def main(unused_argv):
 
             # Basic RL
             if FLAGS.basic_rl:
+                logging.info(yellow + "Run Basic RL" + reset)
                 pi = mdp_util.solve_cmdp(mle_cmdp)
                 v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi)
                 basic_r = v_r[0]
@@ -182,6 +192,7 @@ def main(unused_argv):
 
             # UnconstrainedOptiDICE
             if FLAGS.unconstrained:
+                logging.info(yellow + "Run Unconstrained OptiDICE" + reset)
                 _, _, pi, off_eval_r = offline_cmdp.optidice(mle_cmdp, pi_b, alpha)
                 v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi)
                 optidice_r = v_r[0]
@@ -200,6 +211,7 @@ def main(unused_argv):
 
             # Vanilla ConstrainedOptiDICE
             if FLAGS.vanilla_constrained:
+                logging.info(yellow + "Run Vanilla Constrained OptiDICE" + reset)
                 pi, _, _ = offline_cmdp.constrained_optidice(mle_cmdp, pi_b, alpha)
                 v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi)
                 cdice_r = v_r[0]
@@ -212,6 +224,7 @@ def main(unused_argv):
 
             # Conservative ConstrainedOptiDICE
             if FLAGS.conservative_constrained:
+                logging.info(yellow + "Run Conservative Constrained OptiDICE" + reset)
                 epsilon = 0.1 / num_trajectories
                 pi = offline_cmdp.conservative_constrained_optidice(  # compute upper bound
                     mle_cmdp, pi_b, alpha=alpha, epsilon=epsilon
@@ -229,6 +242,7 @@ def main(unused_argv):
 
             # ROIDICE
             if FLAGS.roidice:
+                logging.info(yellow + "Run ROIDICE" + reset)
                 pi, off_eval_r, off_eval_c = offline_cmdp.roidice(mle_cmdp, pi_b, alpha, target_roi)
                 off_roi = off_eval_r / off_eval_c
                 v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi)
