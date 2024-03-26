@@ -121,22 +121,15 @@ def main(unused_argv):
             num_states, num_actions, num_costs, cost_thresholds, gamma
         )
 
-        result = {}
         # Optimal policy for unconstrained MDP
         pi_uopt, _, _ = mdp_util.solve_mdp(cmdp)
         v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi_uopt)
         uopt_r, uopt_c = v_r[0], v_c[0][0]
-        results["uopt_r"].append(uopt_r)
-        results["uopt_c"].append(uopt_c)
-        # result.update({"uopt_r": uopt_r, "uopt_c": uopt_c})
 
         # Optimal policy for constrained MDP
         pi_copt = mdp_util.solve_cmdp(cmdp)
         v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi_copt)
         opt_r, opt_c = v_r[0], v_c[0][0]
-        results["opt_r"].append(opt_c)
-        results["opt_c"].append(opt_r)
-        # result.update({"opt_r": opt_r, "opt_c": opt_c})
 
         # Construct behavior policy
         pi_b = offline_cmdp.generate_baseline_policy(
@@ -144,9 +137,6 @@ def main(unused_argv):
         )
         v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi_b)
         pib_r, pib_c = v_r[0], v_c[0][0]
-        results["behav_r"].append(pib_r)
-        results["behav_c"].append(pib_c)
-        # result.update({"behav_r": pib_r, "behav_c": pib_c})
 
         alpha = FLAGS.alpha
         target_roi = FLAGS.target_roi
@@ -178,6 +168,7 @@ def main(unused_argv):
             )
 
             # Basic RL
+            basic_r, basic_c, true_roi_basic = 0., 0., 0.
             if FLAGS.basic_rl:
                 logging.info(yellow + "Run Basic RL" + reset)
                 pi = mdp_util.solve_cmdp(mle_cmdp)
@@ -185,12 +176,9 @@ def main(unused_argv):
                 basic_r = v_r[0]
                 basic_c = v_c[0][0]
                 true_roi_basic = basic_r / basic_c
-                results["basic_r"].append(basic_r)
-                results["basic_c"].append(basic_c)
-                results["basic_roi"].append(true_roi_basic)
-                # result.update({"basic_r": basic_r, "basic_c": basic_c, "basic_roi": true_roi_basic})
 
             # UnconstrainedOptiDICE
+            optidice_r, optidice_c, true_roi_optidice = 0., 0., 0. 
             if FLAGS.unconstrained:
                 logging.info(yellow + "Run Unconstrained OptiDICE" + reset)
                 _, _, pi, off_eval_r = offline_cmdp.optidice(mle_cmdp, pi_b, alpha)
@@ -198,18 +186,9 @@ def main(unused_argv):
                 optidice_r = v_r[0]
                 optidice_c = v_c[0][0]
                 true_roi_optidice = optidice_r / optidice_c
-                results["ucdice_r"].append(optidice_r)
-                results["ucdice_c"].append(optidice_c)
-                results["ucdice_roi"].append(true_roi_optidice)
-                # result.update(
-                #     {
-                #         "ucdice_r": optidice_r,
-                #         "ucdice_c": optidice_c,
-                #         "ucdice_roi": true_roi_optidice,
-                #     }
-                # )
 
             # Vanilla ConstrainedOptiDICE
+            cdice_r, cdice_c, true_roi_cdice = 0., 0., 0.
             if FLAGS.vanilla_constrained:
                 logging.info(yellow + "Run Vanilla Constrained OptiDICE" + reset)
                 pi, _, _ = offline_cmdp.constrained_optidice(mle_cmdp, pi_b, alpha)
@@ -217,12 +196,9 @@ def main(unused_argv):
                 cdice_r = v_r[0]
                 cdice_c = v_c[0][0]
                 true_roi_cdice = cdice_r / cdice_c
-                results["cdice_r"].append(cdice_r)
-                results["cdice_c"].append(cdice_c)
-                results["cdice_roi"].append(true_roi_cdice)
-                # result.update({"cdice_r": cdice_r, "cdice_c": cdice_c, "cdice_roi": true_roi_cdice})
 
             # Conservative ConstrainedOptiDICE
+            ccdice_r, ccdice_c, true_roi_ccdice = 0., 0., 0. 
             if FLAGS.conservative_constrained:
                 logging.info(yellow + "Run Conservative Constrained OptiDICE" + reset)
                 epsilon = 0.1 / num_trajectories
@@ -233,14 +209,10 @@ def main(unused_argv):
                 ccdice_r = v_r[0]
                 ccdice_c = v_c[0][0]
                 true_roi_ccdice = ccdice_r / ccdice_c
-                results["ccdice_r"].append(ccdice_r)
-                results["ccdice_c"].append(ccdice_c)
-                results["ccdice_roi"].append(true_roi_ccdice)
-                # result.update(
-                #     {"ccdice_r": ccdice_r, "ccdice_c": ccdice_c, "ccdice_roi": true_roi_ccdice}
-                # )
 
             # ROIDICE
+            off_eval_r, off_eval_c, off_roi = 0., 0., 0.
+            true_r, true_c, true_roi = 0., 0., 0.
             if FLAGS.roidice:
                 logging.info(yellow + "Run ROIDICE" + reset)
                 pi, off_eval_r, off_eval_c = offline_cmdp.roidice(mle_cmdp, pi_b, alpha, target_roi)
@@ -249,43 +221,59 @@ def main(unused_argv):
                 true_r = v_r[0]
                 true_c = v_c[0][0]
                 true_roi = true_r / true_c
-                results["roidice_r"].append(off_eval_r)
-                results["roidice_c"].append(off_eval_c)
-                results["roidice_roi"].append(off_roi)
-                results["target_roi"].append(target_roi)
-                # result.update(
-                #     {
-                #         "roidice_r": off_eval_r,
-                #         "roidice_c": off_eval_c,
-                #         "roidice_roi": off_roi,
-                #         "target_roi": target_roi,
-                #     }
-                # )
-                results["true_r"].append(true_r)
-                results["true_c"].append(true_c)
-                results["true_roi"].append(true_roi)
-                result.update({"true_r": true_r, "true_c": true_c, "true_roi": true_roi})
+
+            # log results
+            results["uopt_r"].append(uopt_r)
+            results["uopt_c"].append(uopt_c)
+            results["opt_r"].append(opt_c)
+            results["opt_c"].append(opt_r)
+            results["behav_r"].append(pib_r)
+            results["behav_c"].append(pib_c)
+            # basic RL
+            results["basic_r"].append(basic_r)
+            results["basic_c"].append(basic_c)
+            results["basic_roi"].append(true_roi_basic)
+            # unconstrained optidice
+            results["ucdice_r"].append(optidice_r)
+            results["ucdice_c"].append(optidice_c)
+            results["ucdice_roi"].append(true_roi_optidice)
+            # constrained optidice
+            results["cdice_r"].append(cdice_r)
+            results["cdice_c"].append(cdice_c)
+            results["cdice_roi"].append(true_roi_cdice)
+            # conservative constrained optidice
+            results["ccdice_r"].append(ccdice_r)
+            results["ccdice_c"].append(ccdice_c)
+            results["ccdice_roi"].append(true_roi_ccdice)
+            # roidice
+            results["roidice_r"].append(off_eval_r)
+            results["roidice_c"].append(off_eval_c)
+            results["roidice_roi"].append(off_roi)
+            results["target_roi"].append(target_roi)
+            # true
+            results["true_r"].append(true_r)
+            results["true_c"].append(true_c)
+            results["true_roi"].append(true_roi)
 
             # Print the result
             elapsed_time = time.time() - start_time
             results["seed"].append(seed)
             results["num_trajectories"].append(num_trajectories)
             results["elapsed_time"].append(elapsed_time)
-            # result.update(
-            #     {
-            #         "seed": seed,
-            #         "num_trajectories": num_trajectories,
-            #         "elapsed_time": elapsed_time,
-            #     }
-            # )
-            logging.info(bold_red + f"{result}" + reset)
+
+            logging.info(bold_red + f"{results}" + reset)
 
     df = pd.DataFrame.from_dict(results)
-    df.to_csv(os.path.join(save_path, f"alpha{alpha}_target_roi{target_roi}.csv"), index=True)
+    df.to_csv(
+        os.path.join(
+            save_path, f"alpha{alpha}_target_roi{target_roi}_cost_thresholds{FLAGS.cost_thresholds}.csv"
+        ),
+        index=True,
+    )
 
     logging.info(
         green
-        + f"Done with options (alpha: {alpha}, target_roi: {target_roi}, seed: {seed})"
+        + f"Done with options (alpha: {alpha}, target_roi: {target_roi}, cost_thresholds: {FLAGS.cost_thresholds}, seed: {seed})"
         + reset
     )
 
