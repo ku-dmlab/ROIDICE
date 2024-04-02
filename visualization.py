@@ -38,18 +38,19 @@ if __name__ == "__main__":
         tot_arr[:,:,i] = tot[f"{plot_keys[i]}_mean"].to_numpy().reshape(len(alpha), len(target_roi))
 
     # plot figure
-    fig = plt.figure(figsize=(18, 14))
+    fig = plt.figure(figsize=(18, 16))
+    _xlabel = [str(a) for a in alpha]
     _ylabel = ["REWARD", "COST", "ROI"]
     _tmp = [2, 2, 2, 2, 0, 0, 0, 0, 1, 1, 1, 1]
     for i in range(len(target_roi)*3):
         plt.subplot(3, 4, i+1)
-        plt.xticks(alpha, rotation=45)
-        # plt.xlabel("alpha")
+        plt.xticks(range(len(alpha)), _xlabel, rotation=45)
+        plt.xlabel("alpha")
         plt.ylabel(_ylabel[_tmp[i]])
         plt.title(f"target roi {target_roi[i%len(target_roi)]}")
         for v in range(0, len(plot_keys), 3):
             y = tot_arr[:, i%len(target_roi), v+_tmp[i]]
-            plt.plot(alpha, y, 'o-', label=plot_keys[v+_tmp[i]])
+            plt.plot(range(len(alpha)), y, 'o-', label=plot_keys[v+_tmp[i]])
         plt.legend()
 
     # save

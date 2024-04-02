@@ -157,7 +157,7 @@ def generate_random_cmdp(
     min_value_state, min_value = -1, 1e10
     for s in range(num_states - 1):
         reward = np.zeros((num_states, num_actions))
-        reward[s, :] = 1 / (1 - gamma)
+        reward[s, :] = 1 / (1 - gamma) # 20
         transition_tmp = np.array(transition[s, :, :])
         transition[s, :, :] = 0
         transition[s, :, absorbing_state] = 1  # from goal_state to absorbing state
@@ -176,7 +176,9 @@ def generate_random_cmdp(
 
     # Define a cost function.
     while True:
-        costs = np.random.beta(0.2, 0.2, (num_costs, num_states, num_actions))
+        # costs = np.random.beta(0.2, 0.2, (num_costs, num_states, num_actions))
+        costs = np.ones((num_costs, num_states, num_actions))# * 100
+
         # For each state, there exists a no-cost action.
         for s in range(num_states):
             a_no_cost = np.random.randint(0, num_actions)

@@ -51,7 +51,8 @@ flags.DEFINE_integer("vanilla_constrained", 0, "Whether run vanilla constrained 
 flags.DEFINE_integer(
     "conservative_constrained", 0, "Whether run conservative constrained optidice."
 )
-flags.DEFINE_integer("roidice", 1, "Whether run ROIDICE.")
+flags.DEFINE_integer("roidice", 0, "Whether run ROIDICE.")
+flags.DEFINE_integer("max_roidice", 0, "Whether run ROIDICE.")
 
 FLAGS = flags.FLAGS
 
@@ -91,6 +92,13 @@ keys = [
     "true_r",
     "true_c",
     "true_roi",
+    "max_roidice_r",
+    "max_roidice_c",
+    "max_roidice_roi",
+    "max_lamb",
+    "max_true_r",
+    "max_true_c",
+    "max_true_roi",
     "seed",
     "num_trajectories",
     "elapsed_time",
@@ -168,7 +176,7 @@ def main(unused_argv):
             )
 
             # Basic RL
-            basic_r, basic_c, true_roi_basic = 0., 0., 0.
+            basic_r, basic_c, true_roi_basic = 0.0, 0.0, 0.0
             if FLAGS.basic_rl:
                 logging.info(yellow + "Run Basic RL" + reset)
                 pi = mdp_util.solve_cmdp(mle_cmdp)
@@ -178,7 +186,7 @@ def main(unused_argv):
                 true_roi_basic = basic_r / basic_c
 
             # UnconstrainedOptiDICE
-            optidice_r, optidice_c, true_roi_optidice = 0., 0., 0. 
+            optidice_r, optidice_c, true_roi_optidice = 0.0, 0.0, 0.0
             if FLAGS.unconstrained:
                 logging.info(yellow + "Run Unconstrained OptiDICE" + reset)
                 _, _, pi, off_eval_r = offline_cmdp.optidice(mle_cmdp, pi_b, alpha)
@@ -188,7 +196,7 @@ def main(unused_argv):
                 true_roi_optidice = optidice_r / optidice_c
 
             # Vanilla ConstrainedOptiDICE
-            cdice_r, cdice_c, true_roi_cdice = 0., 0., 0.
+            cdice_r, cdice_c, true_roi_cdice = 0.0, 0.0, 0.0
             if FLAGS.vanilla_constrained:
                 logging.info(yellow + "Run Vanilla Constrained OptiDICE" + reset)
                 pi, _, _ = offline_cmdp.constrained_optidice(mle_cmdp, pi_b, alpha)
@@ -198,7 +206,7 @@ def main(unused_argv):
                 true_roi_cdice = cdice_r / cdice_c
 
             # Conservative ConstrainedOptiDICE
-            ccdice_r, ccdice_c, true_roi_ccdice = 0., 0., 0. 
+            ccdice_r, ccdice_c, true_roi_ccdice = 0.0, 0.0, 0.0
             if FLAGS.conservative_constrained:
                 logging.info(yellow + "Run Conservative Constrained OptiDICE" + reset)
                 epsilon = 0.1 / num_trajectories
@@ -211,8 +219,8 @@ def main(unused_argv):
                 true_roi_ccdice = ccdice_r / ccdice_c
 
             # ROIDICE
-            off_eval_r, off_eval_c, off_roi = 0., 0., 0.
-            true_r, true_c, true_roi = 0., 0., 0.
+            off_eval_r, off_eval_c, off_roi = 0.0, 0.0, 0.0
+            true_r, true_c, true_roi = 0.0, 0.0, 0.0
             if FLAGS.roidice:
                 logging.info(yellow + "Run ROIDICE" + reset)
                 pi, off_eval_r, off_eval_c = offline_cmdp.roidice(mle_cmdp, pi_b, alpha, target_roi)
@@ -221,6 +229,21 @@ def main(unused_argv):
                 true_r = v_r[0]
                 true_c = v_c[0][0]
                 true_roi = true_r / true_c
+
+            # Maximize ROI
+            max_off_eval_r, max_off_eval_c, max_off_roi = 0.0, 0.0, 0.0
+            max_lamb = 0.0
+            max_true_r, max_true_c, max_true_roi = 0.0, 0.0, 0.0
+            if FLAGS.max_roidice:
+                logging.info(yellow + "Run Mamimize ROIDICE" + reset)
+                pi, max_off_eval_r, max_off_eval_c, max_lamb = offline_cmdp.roidice_max_roi(
+                    mle_cmdp, pi_b, alpha
+                )
+                max_off_roi = max_off_eval_r / max_off_eval_c
+                v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi)
+                max_true_r = v_r[0]
+                max_true_c = v_c[0][0]
+                max_true_roi = max_true_r / max_true_c
 
             # log results
             results["uopt_r"].append(uopt_r)
@@ -250,10 +273,17 @@ def main(unused_argv):
             results["roidice_c"].append(off_eval_c)
             results["roidice_roi"].append(off_roi)
             results["target_roi"].append(target_roi)
-            # true
             results["true_r"].append(true_r)
             results["true_c"].append(true_c)
             results["true_roi"].append(true_roi)
+            # ROI maximize
+            results["max_roidice_r"].append(max_off_eval_r)
+            results["max_roidice_c"].append(max_off_eval_c)
+            results["max_roidice_roi"].append(max_off_roi)
+            results["max_lamb"].append(max_lamb)
+            results["max_true_r"].append(max_true_r)
+            results["max_true_c"].append(max_true_c)
+            results["max_true_roi"].append(max_true_roi)
 
             # Print the result
             elapsed_time = time.time() - start_time
@@ -266,7 +296,8 @@ def main(unused_argv):
     df = pd.DataFrame.from_dict(results)
     df.to_csv(
         os.path.join(
-            save_path, f"alpha{alpha}_target_roi{target_roi}_cost_thresholds{FLAGS.cost_thresholds}.csv"
+            save_path,
+            f"alpha{alpha}_cost_thresholds{FLAGS.cost_thresholds}_tar_max.csv",
         ),
         index=True,
     )
