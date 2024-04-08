@@ -306,6 +306,75 @@ def roidice(cmdp: util.CMDP, pi_b: np.ndarray, alpha: float, target: float):
     return np.array(pi), off_eval_r, off_eval_c
 
 
+def roidice_lower_bound(cmdp: util.CMDP, pi_b: np.ndarray, alpha: float, lamb_lower: float):
+    """f-divergence regularized constrained RL.
+
+    max_{d} E_d[R(s,a)] - alpha * E_{d_b}[f(d(s,a)/d_b(s,a))]
+    s.t. E_d[C(s,a)] <= hat{c}.
+
+    We assume that f(x) = 0.5 (x-1)^2.
+
+    Args:
+      cmdp: a CMDP instance.
+      pi_b: behavior policy.
+      alpha: regularization hyperparameter for f-divergence.
+
+    Returns:
+      the resulting policy. [num_states, num_actions]
+    """
+    d_b = (
+        _compute_marginal_distribution(cmdp, pi_b).reshape(cmdp.num_states * cmdp.num_actions)
+        + 1e-6
+    )  # |S||A|
+    d_b /= np.sum(d_b)
+    p0 = np.eye(cmdp.num_states)[cmdp.initial_state]  # |S|
+    p = np.array(cmdp.transition.reshape(cmdp.num_states * cmdp.num_actions, cmdp.num_states))
+    p = p / np.sum(p, axis=1, keepdims=True)
+    b = np.repeat(np.eye(cmdp.num_states), cmdp.num_actions, axis=0)  # |S||A| x |S|
+    r = np.array(cmdp.reward.reshape(cmdp.num_states * cmdp.num_actions))  # |S||A|
+    c = np.array(cmdp.costs.reshape(cmdp.num_costs, cmdp.num_states * cmdp.num_actions))
+    # d_diag = np.diag(d_b)
+    # Solve:
+    # minimize    (1/2)*x^T P x + q^T x
+    # subject to  G x <= h
+    #             A x = b.
+    d_diag = np.diag(d_b)
+    qp_p = alpha * (d_diag)
+    qp_q = -d_diag @ r - alpha * d_b
+    target_const = ((r - lamb_lower * c[0]).T @ d_diag).reshape(1, cmdp.num_states * cmdp.num_actions)
+    qp_g = np.concatenate(
+        [c @ d_diag, -np.eye(cmdp.num_states * cmdp.num_actions), -target_const], axis=0
+    )
+    qp_h = np.concatenate(
+        [cmdp.cost_thresholds, np.zeros(cmdp.num_states * cmdp.num_actions), np.zeros(1)]
+    )
+
+    qp_a = np.concatenate([(b.T - cmdp.gamma * p.T) @ d_diag], axis=0)
+    qp_b = np.concatenate([(1 - cmdp.gamma) * p0])
+    res = cvxopt.solvers.qp(
+        cvxopt.matrix(qp_p),
+        cvxopt.matrix(qp_q),
+        cvxopt.matrix(qp_g),
+        cvxopt.matrix(qp_h),
+        cvxopt.matrix(qp_a),
+        cvxopt.matrix(qp_b),
+    )
+    w = np.array(res["x"])[:, 0]  # [num_states * num_actions]
+    assert np.all(w >= -1e-4), w
+    w = np.clip(w, 1e-10, np.inf)
+
+    # off-policy evaluation
+    off_eval_r = np.sum(w * d_b * r)
+    off_eval_c = np.sum(w * d_b * c[0])
+
+    # policy extraction
+    pi = (w * d_b).reshape(cmdp.num_states, cmdp.num_actions) + 1e-10
+    pi /= np.sum(pi, axis=1, keepdims=True)
+    assert np.all(pi >= -1e-6), pi
+
+    return np.array(pi), off_eval_r, off_eval_c
+
+
 def roidice_max_roi(cmdp: util.CMDP, pi_b: np.ndarray, alpha: float):
     d_b = (
         _compute_marginal_distribution(cmdp, pi_b).reshape(cmdp.num_states * cmdp.num_actions)
@@ -327,7 +396,7 @@ def roidice_max_roi(cmdp: util.CMDP, pi_b: np.ndarray, alpha: float):
         f = jnp.power(w - 1, 2)
         loss = lamb - 0.5 * alpha * jnp.sum(d_b * f)
         return -loss
-    
+
     loss_jit = jax.jit(loss_fn)
     grad_jit = jax.jit(jax.grad(loss_fn))
 
@@ -335,29 +404,31 @@ def roidice_max_roi(cmdp: util.CMDP, pi_b: np.ndarray, alpha: float):
     jac = lambda x: np.array(grad_jit(x))
 
     # linear constraints
-    coef = np.zeros((1 + cmdp.num_states, 1 + cmdp.num_states * cmdp.num_actions)) # |S| + 1 x |S||A| + 1
-    coef[0, 1:] = (c @ d_diag).reshape(-1) # |S||A|
-    coef[1:, 1:] = (b.T - cmdp.gamma * p.T) @ d_diag # |S| x |S||A|
+    coef = np.zeros(
+        (1 + cmdp.num_states, 1 + cmdp.num_states * cmdp.num_actions)
+    )  # |S| + 1 x |S||A| + 1
+    coef[0, 1:] = (c @ d_diag).reshape(-1)  # |S||A|
+    coef[1:, 1:] = (b.T - cmdp.gamma * p.T) @ d_diag  # |S| x |S||A|
     lb = np.concatenate(([-np.inf], (1 - cmdp.gamma) * p0))
     ub = np.concatenate((cmdp.cost_thresholds, (1 - cmdp.gamma) * p0))
     linear_constraints = scipy.optimize.LinearConstraint(coef, lb=lb, ub=ub)
 
     # nonlinear constraints
     def cons_f(x):
-        return np.array([np.sum(x[1:] * (x[0] * c - r) @ d_diag)]) # (1,)
+        return np.array([np.sum(x[1:] * (x[0] * c - r) @ d_diag)])  # (1,)
 
     def cons_jac(x):
         dlamb = np.array([np.sum(x[1:] * c @ d_diag)])
         dw = (x[0] * c - r) @ d_diag
-        return np.concatenate((dlamb, dw.reshape(-1))) # |S||A| + 1
+        return np.concatenate((dlamb, dw.reshape(-1)))  # |S||A| + 1
 
     def cons_hess(x, v):
         hess = np.zeros(
             (cmdp.num_states * cmdp.num_actions + 1, cmdp.num_states * cmdp.num_actions + 1)
         )
-        hess[0,1:] = (c @ d_diag).reshape(-1)
-        hess[1:,0] = (c @ d_diag).reshape(-1)
-        return v[0] * hess # |S||A| + 1 x |S||A| + 1
+        hess[0, 1:] = (c @ d_diag).reshape(-1)
+        hess[1:, 0] = (c @ d_diag).reshape(-1)
+        return v[0] * hess  # |S||A| + 1 x |S||A| + 1
 
     lamb_constraint = scipy.optimize.NonlinearConstraint(
         cons_f, -np.inf, 0, jac=cons_jac, hess=cons_hess
@@ -365,7 +436,7 @@ def roidice_max_roi(cmdp: util.CMDP, pi_b: np.ndarray, alpha: float):
 
     # Minimize loss_fn.
     x0 = np.ones(1 + cmdp.num_states * cmdp.num_actions)
-    lb, ub = np.zeros_like(x0), np.ones_like(x0) * np.inf # lamb >= 0 and w >= 0
+    lb, ub = np.zeros_like(x0), np.ones_like(x0) * np.inf  # lamb >= 0 and w >= 0
     bounds = scipy.optimize.Bounds(lb, ub, keep_feasible=False)
     solution = scipy.optimize.minimize(
         f,
@@ -377,10 +448,10 @@ def roidice_max_roi(cmdp: util.CMDP, pi_b: np.ndarray, alpha: float):
             "ftol": 1e-10,
             "gtol": 1e-10,
         },
-        constraints=[linear_constraints, lamb_constraint]
+        constraints=[linear_constraints, lamb_constraint],
     )
 
-    lamb, w = solution.x[0], solution.x[1:] # (1,), [num_states * num_actions]
+    lamb, w = solution.x[0], solution.x[1:]  # (1,), [num_states * num_actions]
     assert np.all(w >= -1e-4), w
     w = np.clip(w, 1e-10, np.inf)
 
@@ -393,8 +464,98 @@ def roidice_max_roi(cmdp: util.CMDP, pi_b: np.ndarray, alpha: float):
     pi /= np.sum(pi, axis=1, keepdims=True)
     assert np.all(pi >= -1e-6), pi
 
-    return np.array(pi), off_eval_r, off_eval_c, lamb
+    return np.array(pi), off_eval_r, off_eval_c, lamb, solution.success
 
+def roidice_max_roi_reg(cmdp: util.CMDP, pi_b: np.ndarray, alpha: float, beta: float):
+    d_b = (
+        _compute_marginal_distribution(cmdp, pi_b).reshape(cmdp.num_states * cmdp.num_actions)
+        + 1e-6
+    )  # |S||A|
+    d_b /= np.sum(d_b)
+
+    p0 = np.eye(cmdp.num_states)[cmdp.initial_state]  # |S|
+    p = np.array(cmdp.transition.reshape(cmdp.num_states * cmdp.num_actions, cmdp.num_states))
+    p = p / np.sum(p, axis=1, keepdims=True)
+
+    b = np.repeat(np.eye(cmdp.num_states), cmdp.num_actions, axis=0)  # |S||A| x |S|
+    r = np.array(cmdp.reward.reshape(cmdp.num_states * cmdp.num_actions))  # |S||A|
+    c = np.array(cmdp.costs.reshape(cmdp.num_costs, cmdp.num_states * cmdp.num_actions))
+    d_diag = np.diag(d_b)
+
+    def loss_fn(variables):
+        lamb, w = variables[0], variables[1:]
+        f = jnp.power(w - 1, 2)
+        loss = lamb - 0.5 * alpha * jnp.sum(d_b * f) - beta * jnp.power(lamb, 2)
+        return -loss
+
+    loss_jit = jax.jit(loss_fn)
+    grad_jit = jax.jit(jax.grad(loss_fn))
+
+    f = lambda x: np.array(loss_jit(x))
+    jac = lambda x: np.array(grad_jit(x))
+
+    # linear constraints
+    coef = np.zeros(
+        (1 + cmdp.num_states, 1 + cmdp.num_states * cmdp.num_actions)
+    )  # |S| + 1 x |S||A| + 1
+    coef[0, 1:] = (c @ d_diag).reshape(-1)  # |S||A|
+    coef[1:, 1:] = (b.T - cmdp.gamma * p.T) @ d_diag  # |S| x |S||A|
+    lb = np.concatenate(([-np.inf], (1 - cmdp.gamma) * p0))
+    ub = np.concatenate((cmdp.cost_thresholds, (1 - cmdp.gamma) * p0))
+    linear_constraints = scipy.optimize.LinearConstraint(coef, lb=lb, ub=ub)
+
+    # nonlinear constraints
+    def cons_f(x):
+        return np.array([np.sum(x[1:] * (x[0] * c - r) @ d_diag)])  # (1,)
+
+    def cons_jac(x):
+        dlamb = np.array([np.sum(x[1:] * c @ d_diag)])
+        dw = (x[0] * c - r) @ d_diag
+        return np.concatenate((dlamb, dw.reshape(-1)))  # |S||A| + 1
+
+    def cons_hess(x, v):
+        hess = np.zeros(
+            (cmdp.num_states * cmdp.num_actions + 1, cmdp.num_states * cmdp.num_actions + 1)
+        )
+        hess[0, 1:] = (c @ d_diag).reshape(-1)
+        hess[1:, 0] = (c @ d_diag).reshape(-1)
+        return v[0] * hess  # |S||A| + 1 x |S||A| + 1
+
+    lamb_constraint = scipy.optimize.NonlinearConstraint(
+        cons_f, -np.inf, 0, jac=cons_jac, hess=cons_hess
+    )
+
+    # Minimize loss_fn.
+    x0 = np.ones(1 + cmdp.num_states * cmdp.num_actions)
+    lb, ub = np.zeros_like(x0), np.ones_like(x0) * np.inf  # lamb >= 0 and w >= 0
+    bounds = scipy.optimize.Bounds(lb, ub, keep_feasible=False)
+    solution = scipy.optimize.minimize(
+        f,
+        x0=x0,
+        jac=jac,
+        bounds=bounds,
+        options={
+            "maxiter": 10000,
+            "ftol": 1e-10,
+            "gtol": 1e-10,
+        },
+        constraints=[linear_constraints, lamb_constraint],
+    )
+
+    lamb, w = solution.x[0], solution.x[1:]  # (1,), [num_states * num_actions]
+    assert np.all(w >= -1e-4), w
+    w = np.clip(w, 1e-10, np.inf)
+
+    # off-policy evaluation
+    off_eval_r = np.sum(w * d_b * r)
+    off_eval_c = np.sum(w * d_b * c[0])
+
+    # policy extraction
+    pi = (w * d_b).reshape(cmdp.num_states, cmdp.num_actions) + 1e-10
+    pi /= np.sum(pi, axis=1, keepdims=True)
+    assert np.all(pi >= -1e-6), pi
+
+    return np.array(pi), off_eval_r, off_eval_c, lamb, solution.success
 
 def roidice_no_reward(cmdp: util.CMDP, pi_b: np.ndarray, alpha: float, lamb: float):
     """f-divergence regularized constrained RL.

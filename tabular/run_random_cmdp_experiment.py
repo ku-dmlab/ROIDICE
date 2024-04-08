@@ -44,6 +44,8 @@ flags.DEFINE_integer("num_iterations", 10, "The number of iterations for the rep
 flags.DEFINE_integer("num_trajectories", 1000, "The number of trajectories to collect.")
 flags.DEFINE_float("alpha", 0.001, "Alpha value.")
 flags.DEFINE_float("target_roi", 5.0, "Target ROI value.")
+flags.DEFINE_float("lamb_lower", 1.0, "Lower bound of ROI value.")
+flags.DEFINE_float("beta", 0.1, "Beta value.")
 
 flags.DEFINE_integer("basic_rl", 0, "Whether run basic rl algorithm.")
 flags.DEFINE_integer("unconstrained", 0, "Whether run unconstrained optidice.")
@@ -52,11 +54,13 @@ flags.DEFINE_integer(
     "conservative_constrained", 0, "Whether run conservative constrained optidice."
 )
 flags.DEFINE_integer("roidice", 0, "Whether run ROIDICE.")
-flags.DEFINE_integer("max_roidice", 0, "Whether run ROIDICE.")
+flags.DEFINE_integer("roidice_lower_bound", 0, "Whether run Lower bound ROIDICE.")
+flags.DEFINE_integer("max_roidice", 0, "Whether run Maximize ROIDICE.")
+flags.DEFINE_integer("max_roidice_reg", 0, "Whether run Maximize ROIDICE with regularization.")
+
+flags.DEFINE_multi_string("path", ".", "Save directory name")
 
 FLAGS = flags.FLAGS
-
-save_path = "./results/"
 
 # logging color
 grey = "\x1b[38;20m"
@@ -92,13 +96,27 @@ keys = [
     "true_r",
     "true_c",
     "true_roi",
+    "lower_roidice_r",
+    "lower_roidice_c",
+    "lower_roidice_roi",
+    "lower_true_r",
+    "lower_true_c",
+    "lower_true_roi",
     "max_roidice_r",
     "max_roidice_c",
     "max_roidice_roi",
     "max_lamb",
+    "max_success",
     "max_true_r",
     "max_true_c",
     "max_true_roi",
+    "max_reg_roidice_r",
+    "max_reg_roidice_c",
+    "max_reg_roidice_roi",
+    "max_reg_lamb",
+    "max_reg_true_r",
+    "max_reg_true_c",
+    "max_reg_true_roi",
     "seed",
     "num_trajectories",
     "elapsed_time",
@@ -106,6 +124,7 @@ keys = [
 
 
 def main(unused_argv):
+    save_path = f"./results/{FLAGS.path[0]}/"
     os.makedirs(save_path, exist_ok=True)
 
     """Main function."""
@@ -124,6 +143,7 @@ def main(unused_argv):
     results = {k: [] for k in keys}
     # Construct a random CMDP
     for seed in range(FLAGS.num_iterations):
+        additional_name = ""
         np.random.seed(seed)
         cmdp = mdp_util.generate_random_cmdp(
             num_states, num_actions, num_costs, cost_thresholds, gamma
@@ -133,9 +153,12 @@ def main(unused_argv):
         pi_uopt, _, _ = mdp_util.solve_mdp(cmdp)
         v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi_uopt)
         uopt_r, uopt_c = v_r[0], v_c[0][0]
+        uopt_roi = uopt_r / uopt_c
 
         # Optimal policy for constrained MDP
         pi_copt = mdp_util.solve_cmdp(cmdp)
+        # if pi_copt.any() == None:
+        #     continue # skip the seed solver cannot solve
         v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi_copt)
         opt_r, opt_c = v_r[0], v_c[0][0]
 
@@ -148,6 +171,8 @@ def main(unused_argv):
 
         alpha = FLAGS.alpha
         target_roi = FLAGS.target_roi
+        lamb_lower = FLAGS.lamb_lower
+        beta = FLAGS.beta
         for num_trajectories in [FLAGS.num_trajectories]:
             logging.info(bold_red + "==========================" + reset)
             logging.info(
@@ -230,20 +255,51 @@ def main(unused_argv):
                 true_c = v_c[0][0]
                 true_roi = true_r / true_c
 
+            # ROIDICE with lower bound constraint
+            off_eval_lower_r, off_eval_lower_c, off_lower_roi = 0.0, 0.0, 0.0
+            true_lower_r, true_lower_c, true_lower_roi = 0.0, 0.0, 0.0
+            if FLAGS.roidice_lower_bound:
+                additional_name += f"_lamb_lower{lamb_lower}"
+                logging.info(yellow + "Run lower bound ROIDICE" + reset)
+                pi, off_eval_lower_r, off_eval_lower_c = offline_cmdp.roidice_lower_bound(
+                    mle_cmdp, pi_b, alpha, lamb_lower
+                )
+                off_lower_roi = off_eval_lower_r / off_eval_lower_c
+                v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi)
+                true_lower_r = v_r[0]
+                true_lower_c = v_c[0][0]
+                true_lower_roi = true_lower_r / true_lower_c
+
             # Maximize ROI
             max_off_eval_r, max_off_eval_c, max_off_roi = 0.0, 0.0, 0.0
             max_lamb = 0.0
             max_true_r, max_true_c, max_true_roi = 0.0, 0.0, 0.0
             if FLAGS.max_roidice:
                 logging.info(yellow + "Run Mamimize ROIDICE" + reset)
-                pi, max_off_eval_r, max_off_eval_c, max_lamb = offline_cmdp.roidice_max_roi(
-                    mle_cmdp, pi_b, alpha
+                pi, max_off_eval_r, max_off_eval_c, max_lamb, max_success = (
+                    offline_cmdp.roidice_max_roi(mle_cmdp, pi_b, alpha)
                 )
                 max_off_roi = max_off_eval_r / max_off_eval_c
                 v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi)
                 max_true_r = v_r[0]
                 max_true_c = v_c[0][0]
                 max_true_roi = max_true_r / max_true_c
+
+            # Maximize ROI with additional regularization
+            max_off_eval_reg_r, max_off_eval_reg_c, max_off_reg_roi = 0.0, 0.0, 0.0
+            max_reg_lamb = 0.0
+            max_true_reg_r, max_true_reg_c, max_true_reg_roi = 0.0, 0.0, 0.0
+            if FLAGS.max_roidice_reg:
+                additional_name += f"_beta{beta}"
+                logging.info(yellow + "Run Mamimize ROIDICE with Regularization" + reset)
+                pi, max_off_eval_reg_r, max_off_eval_reg_c, max_reg_lamb, max_reg_success = (
+                    offline_cmdp.roidice_max_roi_reg(mle_cmdp, pi_b, alpha, beta)
+                )
+                max_off_reg_roi = max_off_eval_reg_r / max_off_eval_reg_c
+                v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi)
+                max_true_reg_r = v_r[0]
+                max_true_reg_c = v_c[0][0]
+                max_true_reg_roi = max_true_reg_r / max_true_reg_c
 
             # log results
             results["uopt_r"].append(uopt_r)
@@ -276,28 +332,43 @@ def main(unused_argv):
             results["true_r"].append(true_r)
             results["true_c"].append(true_c)
             results["true_roi"].append(true_roi)
+            # roidice with lower bound
+            results["lower_roidice_r"].append(off_eval_lower_r)
+            results["lower_roidice_c"].append(off_eval_lower_c)
+            results["lower_roidice_roi"].append(off_lower_roi)
+            results["lower_true_r"].append(true_lower_r)
+            results["lower_true_c"].append(true_lower_c)
+            results["lower_true_roi"].append(true_lower_roi)
             # ROI maximize
             results["max_roidice_r"].append(max_off_eval_r)
             results["max_roidice_c"].append(max_off_eval_c)
             results["max_roidice_roi"].append(max_off_roi)
             results["max_lamb"].append(max_lamb)
+            results["max_success"].append(max_success)
             results["max_true_r"].append(max_true_r)
             results["max_true_c"].append(max_true_c)
             results["max_true_roi"].append(max_true_roi)
-
+            # Maximize ROIDICE with reg
+            results["max_reg_roidice_r"].append(max_off_eval_reg_r)
+            results["max_reg_roidice_c"].append(max_off_eval_reg_c)
+            results["max_reg_roidice_roi"].append(max_off_reg_roi)
+            results["max_reg_lamb"].append(max_reg_lamb)
+            results["max_reg_true_r"].append(max_true_reg_r)
+            results["max_reg_true_c"].append(max_true_reg_c)
+            results["max_reg_true_roi"].append(max_true_reg_roi)
             # Print the result
             elapsed_time = time.time() - start_time
             results["seed"].append(seed)
             results["num_trajectories"].append(num_trajectories)
             results["elapsed_time"].append(elapsed_time)
 
-            logging.info(bold_red + f"{results}" + reset)
+            # logging.info(bold_red + f"{results}" + reset)
 
     df = pd.DataFrame.from_dict(results)
     df.to_csv(
         os.path.join(
             save_path,
-            f"alpha{alpha}_cost_thresholds{FLAGS.cost_thresholds}_tar_max.csv",
+            f"alpha{alpha}_cost_thresholds{FLAGS.cost_thresholds}{additional_name}.csv",
         ),
         index=True,
     )
