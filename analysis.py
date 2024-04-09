@@ -96,7 +96,7 @@ if __name__ == "__main__":
     parser.add_argument("--path", type=str, required=True)
     args = parser.parse_args()
 
-    file_list = sorted(glob.glob(f"./results/{args.path}/*.csv"))
+    file_list = sorted(glob.glob(f"./results/tabular/{args.path}/*.csv"))
     new_keys = []
     check_list = is_runs(args)
     for i, k in enumerate(keys):

@@ -124,7 +124,7 @@ keys = [
 
 
 def main(unused_argv):
-    save_path = f"./results/{FLAGS.path[0]}/"
+    save_path = f"./results/tabular/{FLAGS.path[0]}/"
     os.makedirs(save_path, exist_ok=True)
 
     """Main function."""

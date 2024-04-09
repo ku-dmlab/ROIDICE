@@ -2,3 +2,5 @@ wandb/
 __pycache__/
 results/
 *.ipynb
+benchmark/
+checkpoints/
