@@ -157,7 +157,7 @@ def generate_random_cmdp(
     min_value_state, min_value = -1, 1e10
     for s in range(num_states - 1):
         reward = np.zeros((num_states, num_actions))
-        reward[s, :] = 1 / (1 - gamma)
+        reward[s, :] = 1 / (1 - gamma) # 20
         transition_tmp = np.array(transition[s, :, :])
         transition[s, :, :] = 0
         transition[s, :, absorbing_state] = 1  # from goal_state to absorbing state
@@ -175,21 +175,28 @@ def generate_random_cmdp(
     transition[goal_state, :, absorbing_state] = 1  # to absorbing one
 
     # Define a cost function.
-    while True:
-        costs = np.random.beta(0.2, 0.2, (num_costs, num_states, num_actions))
-        # For each state, there exists a no-cost action.
-        for s in range(num_states):
-            a_no_cost = np.random.randint(0, num_actions)
-            costs[:, s, a_no_cost] = 0
-        costs[:, absorbing_state, :] = 0
-        cmdp = CMDP(
-            num_states, num_actions, num_costs, transition, reward, costs, cost_thresholds, gamma
-        )
-        pi_copt = solve_cmdp(cmdp)
-        v_c_opt = policy_evaluation(cmdp, pi_copt)[2][0, 0]
-        if v_c_opt >= cost_thresholds[0] - 1e-4:
-            # We want that optimal policy tightly matches the cost constraint.
-            break
+    # while True:
+    #     # costs = np.random.beta(0.2, 0.2, (num_costs, num_states, num_actions))
+    #     costs = np.ones((num_costs, num_states, num_actions))# * 100
+
+    #     # For each state, there exists a no-cost action.
+    #     # for s in range(num_states):
+    #     #     a_no_cost = np.random.randint(0, num_actions)
+    #     #     costs[:, s, a_no_cost] += 1
+    #     costs[:, absorbing_state, :] = 0
+    #     cmdp = CMDP(
+    #         num_states, num_actions, num_costs, transition, reward, costs, cost_thresholds, gamma
+    #     )
+    #     pi_copt = solve_cmdp(cmdp)
+    #     v_c_opt = policy_evaluation(cmdp, pi_copt)[2][0, 0]
+    #     if v_c_opt >= cost_thresholds[0] - 1e-4:
+    #         # We want that optimal policy tightly matches the cost constraint.
+    #         break
+
+    # costs = np.ones((num_costs, num_states, num_actions))
+    costs = np.random.beta(0.2, 0.2, (num_costs, num_states, num_actions))
+    # costs *= 2
+    costs[:, absorbing_state] = 0
 
     cmdp = CMDP(
         num_states, num_actions, num_costs, transition, reward, costs, cost_thresholds, gamma
@@ -416,6 +423,8 @@ def solve_cmdp(cmdp: CMDP):
         bounds=(0, np.inf),
         options={"maxiter": 10000, "tol": 1e-8},
     )
+    # if res is None and np.all(res.x < -1e-4):
+    #     return None
     assert np.all(res.x >= -1e-4)
 
     d = np.clip(res.x.reshape(cmdp.num_states, cmdp.num_actions), 1e-10, np.inf)
