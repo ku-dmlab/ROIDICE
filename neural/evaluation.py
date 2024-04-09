@@ -45,11 +45,13 @@ def evaluate(
 
         # compute roi = r / c
         # assert total_cost != 0.0, f"Err: Division by Zero (total_cost: {total_cost})"
-        # total_roi_.append(total_reward / total_cost)
+        if total_cost != 0.0:
+            total_roi_.append(total_reward / total_cost)
         # assert (
         #     discounted_total_cost != 0.0
         # ), f"Err: Division by Zero (discounted_total_cost: {discounted_total_cost})"
-        # discounted_total_roi_.append(discounted_total_reward / discounted_total_cost)
+        if discounted_total_cost != 0.0:
+            discounted_total_roi_.append(discounted_total_reward / discounted_total_cost)
 
         total_reward_.append(total_reward)
         discounted_total_reward_.append(discounted_total_reward)

@@ -7,7 +7,7 @@ from typing import Tuple
 import d4rl  # noqa: F401
 import gym
 import numpy as np
-# import safety_gym  # noqa: F401
+import safety_gym  # noqa: F401
 from absl import app, flags
 from ml_collections import config_flags
 from tqdm import tqdm
