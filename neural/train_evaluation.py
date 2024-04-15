@@ -18,6 +18,7 @@ import environment
 import wandb
 import wrappers
 from dataset_utils import (
+    ConstrainedD4RLDataset,
     D4RLDataset,
     Log,
     SafetyGymDataset,
@@ -51,6 +52,7 @@ flags.DEFINE_float("cost_ub", 0.01, None)
 flags.DEFINE_float("initial_lambda", 1.0, None)
 flags.DEFINE_string("ckpt_dir", None, None, required=False)
 flags.DEFINE_string("eval_ckpt_dir", None, None, required=False)
+flags.DEFINE_string("cost_type", "avg", "Type of cost value assignment - max/avg/min (default: avg)")
 config_flags.DEFINE_config_file(
     "config",
     "default.py",
@@ -88,6 +90,10 @@ def make_env_and_dataset(
 
     env = wrappers.EpisodeMonitor(env)
     env = wrappers.SinglePrecision(env)
+    if isinstance(env_name, SafetyGymEnvironmentName):
+        env = wrappers.CostLowerBound(env)
+    else: # Mujoco
+        env = wrappers.ActionRelevantCost(env, option=FLAGS.cost_type)
 
     env.seed(seed)
     env.action_space.seed(seed)
@@ -116,7 +122,8 @@ def make_env_and_dataset(
             Path("datasets/") / get_fname(env_name),
         )
     else:
-        dataset = D4RLDataset(env)
+        # dataset = D4RLDataset(env)
+        dataset = ConstrainedD4RLDataset(env, cost_type=FLAGS.cost_type)
 
     if env_name in environment.AntMaze:
         # See https://github.com/aviralkumar2907/CQL/blob/master/d4rl/examples/cql_antmaze_new.py#L22
@@ -173,7 +180,7 @@ def main(_):
         project=FLAGS.proj_name,
         group=env_name,
         name=f"{alg}_alpha{FLAGS.alpha}_seed{FLAGS.seed}",
-        tags=[env_name, alg],
+        tags=[env_name, alg, "UNCONSTRAINED_DATA", "COST_MAX_ACTION"],
         config=kwargs,
         mode="offline",
     )
@@ -225,7 +232,7 @@ def main(_):
                     i,
                 )
 
-        agent.save_ckpt(i)
+        # agent.save_ckpt(i)
     else:
         agent.load_ckpt(Path(FLAGS.ckpt_dir), FLAGS.max_steps)
         log(f"Loaded checkpoints from {FLAGS.ckpt_dir}")

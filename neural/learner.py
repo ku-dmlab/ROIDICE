@@ -15,7 +15,7 @@ import critic
 import divergence
 import policy
 import value_net
-from actor import update_bc, update_weighted_bc, update_weighted_bc_without_cost
+from actor import update_bc, update_weighted_bc
 from algorithm import (
     BC,
     Algorithm,
@@ -24,7 +24,7 @@ from algorithm import (
     ROIDICE,
 )
 from common import Batch, ConstrainedBatch, InfoDict, Model, Params, PRNGKey
-from critic import update_nu_state, update_nu_state_without_cost, update_w_state
+from critic import update_nu_state
 from divergence import FDivergence
 
 
@@ -57,9 +57,7 @@ def update_cost_lambda(
     next_nu = nu_network(batch.next_observations)
 
     policy_ratio = divergence.policy_ratio(q, v, alpha, f_divergence)
-    state_ratio = divergence.state_ratio(
-        adv, policy_ratio, f_divergence, discount, nu, next_nu
-    )
+    state_ratio = divergence.state_ratio(adv, policy_ratio, f_divergence, discount, nu, next_nu)
     cost_estimate = (state_ratio * policy_ratio * batch.costs).mean()
 
     def cost_lambda_loss_fn(params: Params) -> tuple[Array, InfoDict]:
@@ -83,7 +81,7 @@ def _update_optidice(
     alg: OptiDICE,
     actor: Model,
     nu_state: Model,
-    batch: Batch,
+    batch: ConstrainedBatch,
     alpha: float,
     discount: float,
     f_divergence: FDivergence,
@@ -91,8 +89,9 @@ def _update_optidice(
     rng: PRNGKey,
 ):
     rng, nu_rng = jax.random.split(rng)
-    new_nu_state, nu_state_info = update_nu_state_without_cost(
+    new_nu_state, nu_state_info = update_nu_state(
         batch,
+        None,
         nu_state,
         alpha,
         discount,
@@ -102,7 +101,7 @@ def _update_optidice(
     )
 
     rng, actor_rng = jax.random.split(rng)
-    new_actor, actor_info = update_weighted_bc_without_cost(
+    new_actor, actor_info = update_weighted_bc(
         batch,
         actor,
         new_nu_state,
@@ -120,59 +119,6 @@ def _update_optidice(
         {**actor_info, **nu_state_info},
     )
 
-@partial(jax.jit, static_argnames=["alg", "f_divergence"])
-def _update_double_weighted_optidice(
-    alg: OptiDICE,
-    actor: Model,
-    nu_state: Model,
-    w_state: Model,
-    batch: Batch,
-    alpha: float,
-    discount: float,
-    f_divergence: FDivergence,
-    gradient_penalty_coeff: float,
-    rng: PRNGKey,
-):
-    rng, nu_rng = jax.random.split(rng)
-
-    new_w_state, w_state_info = update_w_state(
-        batch,
-        nu_state,
-        w_state,
-        alpha,
-        discount,
-        f_divergence,
-    )
-
-    new_nu_state, nu_state_info = update_nu_state_without_cost(
-        batch,
-        nu_state,
-        alpha,
-        discount,
-        gradient_penalty_coeff,
-        f_divergence,
-        nu_rng,
-    )
-
-    rng, actor_rng = jax.random.split(rng)
-    new_actor, actor_info = update_weighted_bc_without_cost(
-        batch,
-        actor,
-        new_nu_state,
-        new_w_state,
-        alpha,
-        discount,
-        f_divergence,
-        actor_rng,
-    )
-
-    return (
-        rng,
-        new_actor,
-        new_nu_state,
-        new_w_state,
-        {**actor_info, **nu_state_info, **w_state_info},
-    )
 
 @partial(jax.jit, static_argnames=["alg", "f_divergence"])
 def _update_coptidice(
@@ -318,9 +264,7 @@ class Learner(object):
                 raise ValueError(f"{opt_decay_schedule} scheduler require max_steps.")
 
             schedule_fn = optax.cosine_decay_schedule(-actor_lr, max_steps)
-            optimiser = optax.chain(
-                optax.scale_by_adam(), optax.scale_by_schedule(schedule_fn)
-            )
+            optimiser = optax.chain(optax.scale_by_adam(), optax.scale_by_schedule(schedule_fn))
         else:
             optimiser = optax.adam(learning_rate=actor_lr)
         actor = Model.create(actor_def, inputs=[actor_key, observations], tx=optimiser)
@@ -341,29 +285,17 @@ class Learner(object):
             tx=optax.adam(learning_rate=value_lr),
         )
 
-        target_critic = Model.create(
-            critic_def, inputs=[critic_key, observations, actions]
-        )
-
+        target_critic = Model.create(critic_def, inputs=[critic_key, observations, actions])
 
         # Define a model for offline evaluation.
         match alg:
             case OptiDICE():
-                rng, nu_state_key, w_state_key = jax.random.split(rng, 3)
+                rng, nu_state_key = jax.random.split(rng)
 
                 self.nu_state = Model.create(
                     value_def,
                     inputs=[nu_state_key, observations],
                     tx=optax.adam(learning_rate=value_lr),
-                )
-
-                w_def = value_net.ValueCritic(
-                    hidden_dims, layer_norm=layernorm, dropout_rate=value_dropout_rate
-                )
-                self.w_state = Model.create(
-                    w_def,
-                    inputs=[w_state_key, observations],
-                    tx=optax.adam(learning_rate=value_lr)
                 )
 
             case COptiDICE():
@@ -395,9 +327,7 @@ class Learner(object):
         self.target_critic = target_critic
         self.rng = rng
 
-    def sample_actions(
-        self, observations: np.ndarray, temperature: float = 1.0
-    ) -> np.ndarray:
+    def sample_actions(self, observations: np.ndarray, temperature: float = 1.0) -> np.ndarray:
         rng, actions = policy.sample_actions(
             self.rng, self.actor.apply_fn, self.actor.params, observations, temperature
         )
@@ -423,25 +353,6 @@ class Learner(object):
                 f_divergence=self.divergence,
                 gradient_penalty_coeff=self.gradient_penalty_coeff,
                 rng=self.rng,
-            )
-        elif self.alg == OptiDICE.WEIGHT:
-            (
-                self.rng,
-                self.actor,
-                self.nu_state,
-                self.w_state,
-                info,
-            ) = _update_double_weighted_optidice(
-                alg=self.alg,
-                actor=self.actor,
-                nu_state=self.nu_state,
-                w_state=self.w_state,
-                batch=batch,
-                alpha=self.alpha,
-                discount=self.discount,
-                f_divergence=self.divergence,
-                gradient_penalty_coeff=self.gradient_penalty_coeff,
-                rng=self.rng
             )
         # Update lambda for constrained RL.
         elif self.alg == COptiDICE.DEFAULT:
@@ -472,7 +383,7 @@ class Learner(object):
                 alg=self.alg, actor=self.actor, batch=batch, rng=self.rng
             )
         else:
-            raise NotImplementedError 
+            raise NotImplementedError
 
         return info
 

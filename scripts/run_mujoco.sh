@@ -1,13 +1,14 @@
 #!/bin/bash
 
-ALPHAS=(0.01 0.1 1.0 10.0)
+ALPHAS=(0.01) #(0.01 0.1 1.0 10.0)
 SEEDS=(0)
 
 GPU_ID="$1"
 ALG="$2"
 ENV="$3"
 DIV="$4"
-PROJ_NAME="$5"
+COST_UB=$5
+PROJ_NAME="$6"
 
 EVAL_INTERVAL=10
 EVAL_EPISODES=2
@@ -20,6 +21,7 @@ for seed in ${SEEDS[*]}; do
 			--proj_name "$PROJ_NAME" \
 			--max_steps 20000 \
 			--divergence "$DIV" \
+			--cost_ub $COST_UB \
 			--config=./neural/configs/mujoco_config.py \
 			--alpha "$alpha" \
 			--eval_interval $EVAL_INTERVAL \

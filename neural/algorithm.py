@@ -2,7 +2,6 @@ from enum import Enum
 
 class OptiDICE(str, Enum):
     DEFAULT = "OptiDICE"
-    WEIGHT = "DWOptiDICE" # Double Weighted OptiDICE
 
 class COptiDICE(str, Enum):
     DEFAULT = "COptiDICE"

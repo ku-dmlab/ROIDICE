@@ -220,6 +220,101 @@ class D4RLDataset(Dataset):
             size=len(dataset["observations"]),
         )
 
+class ConstrainedD4RLDataset(ConstrainedDatasets):
+    def __init__(
+        self,
+        env: gym.Env,
+        cost_type: str = "avg",
+        add_env: Optional[gym.Env] = None,
+        expert_ratio: float = 1.0,
+        clip_to_eps: bool = True,
+        heavy_tail: bool = False,
+        heavy_tail_higher: float = 0.0,
+        eps: float = 1e-5,
+    ):
+        dataset = d4rl.qlearning_dataset(env)
+        if add_env is not None:
+            add_data = d4rl.qlearning_dataset(add_env)
+            if expert_ratio >= 1:
+                raise ValueError("in the mix setting, the expert_ratio must < 1")
+            length_add_data = int(add_data["rewards"].shape[0] * (1 - expert_ratio))
+            length_expert_data = int(length_add_data * expert_ratio)
+            for k, _ in dataset.items():
+                dataset[k] = np.concatenate(
+                    [
+                        add_data[k][:-length_expert_data],
+                        dataset[k][:length_expert_data],
+                    ],
+                    axis=0,
+                )
+            print("-------------------------------")
+            print(
+                f"we are in the mix data regimes, len(expert):{length_expert_data} | len(add_data): {length_add_data} | expert ratio: {expert_ratio}"
+            )
+            print("-------------------------------")
+
+        if heavy_tail:
+            dataset = d4rl.qlearning_dataset(
+                env, heavy_tail=True, heavy_tail_higher=heavy_tail_higher
+            )
+        if clip_to_eps:
+            lim = 1 - eps
+            dataset["actions"] = np.clip(dataset["actions"], -lim, lim)
+
+        dones_float = np.zeros_like(dataset["rewards"])
+
+        for i in range(len(dones_float) - 1):
+            observation_gap = float(
+                np.linalg.norm(
+                    dataset["observations"][i + 1] - dataset["next_observations"][i]
+                )
+            )
+
+            if observation_gap > 1e-6 or dataset["terminals"][i] == 1.0:
+                dones_float[i] = 1
+            else:
+                dones_float[i] = 0
+
+        dones_float[-1] = 1
+
+        # Create timestep informations.
+        t = 0
+        timesteps = np.zeros_like(dataset["rewards"], dtype=np.int64)
+        for i in range(len(dataset["observations"])):
+            timesteps[i] = t
+
+            if dones_float[i] == 1.0:
+                t = 0
+            else:
+                t += 1
+
+        # Extract initial observations.
+        (terminal_indexes,) = np.where(dones_float == 1.0)  # noqa: E712
+        terminal_indexes = np.insert(terminal_indexes, 0, -1)[:-1]
+        initial_observations = dataset["observations"][terminal_indexes + 1]  # type: ignore
+
+        # cost assignment
+        if cost_type == "max":
+            costs = np.max(abs(dataset["actions"]), axis=1) + eps
+        elif cost_type == "avg":
+            costs = np.mean(abs(dataset["actions"]), axis=1) + eps
+        elif cost_type == "min":
+            costs = np.min(abs(dataset["actions"]), axis=1) + eps
+        else:
+            raise NotImplementedError
+
+        super().__init__(
+            dataset["observations"].astype(np.float32),
+            actions=dataset["actions"].astype(np.float32),
+            rewards=dataset["rewards"].astype(np.float32),
+            masks=1.0 - dones_float.astype(np.float32),
+            dones_float=dones_float.astype(np.float32),
+            next_observations=dataset["next_observations"].astype(np.float32),
+            timesteps=timesteps,
+            initial_observations=initial_observations.astype(np.float32),
+            size=len(dataset["observations"]),
+            costs=costs,
+        )
 
 class SafetyGymDataset(ConstrainedDatasets):
     def __init__(

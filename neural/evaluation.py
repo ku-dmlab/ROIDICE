@@ -38,26 +38,24 @@ def evaluate(
             observation, reward, done, info = env.step(action)
             total_reward += reward
             discounted_total_reward += cumulated_discount * reward
-            if isinstance(env_name, SafetyGymEnvironmentName):
-                total_cost += info["cost"]
-                discounted_total_cost += cumulated_discount * info["cost"]
+            total_cost += info["cost"]
+            discounted_total_cost += cumulated_discount * info["cost"]
             cumulated_discount *= discount
 
         # compute roi = r / c
-        # assert total_cost != 0.0, f"Err: Division by Zero (total_cost: {total_cost})"
+        assert total_cost != 0.0, f"Err: Division by Zero (total_cost: {total_cost})"
         if total_cost != 0.0:
             total_roi_.append(total_reward / total_cost)
-        # assert (
-        #     discounted_total_cost != 0.0
-        # ), f"Err: Division by Zero (discounted_total_cost: {discounted_total_cost})"
+        assert (
+            discounted_total_cost != 0.0
+        ), f"Err: Division by Zero (discounted_total_cost: {discounted_total_cost})"
         if discounted_total_cost != 0.0:
             discounted_total_roi_.append(discounted_total_reward / discounted_total_cost)
 
         total_reward_.append(total_reward)
         discounted_total_reward_.append(discounted_total_reward)
-        if isinstance(env_name, SafetyGymEnvironmentName):
-            total_cost_.append(total_cost)
-            discounted_total_cost_.append(discounted_total_cost)
+        total_cost_.append(total_cost)
+        discounted_total_cost_.append(discounted_total_cost)
 
     average_return = np.array(total_reward_).mean()
     average_discounted_return = np.array(discounted_total_reward_).mean()
