@@ -195,10 +195,13 @@ def main(_):
             batch, unnormalized_return = dataset.sample(FLAGS.batch_size)
             update_info = agent.update(batch)
 
+
             if i % FLAGS.log_interval == 0:
                 wandb.log(update_info, i)
 
             if i % FLAGS.eval_interval == 0:
+                # debug
+                tqdm.write(str(update_info))
                 (
                     normalized_return,
                     discounted_return,

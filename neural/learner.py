@@ -15,7 +15,7 @@ import critic
 import divergence
 import policy
 import value_net
-from actor import update_bc, update_weighted_bc
+from actor import update_bc, update_weighted_bc, update_weighted_bc_cct
 from algorithm import (
     BC,
     Algorithm,
@@ -24,7 +24,7 @@ from algorithm import (
     ROIDICE,
 )
 from common import Batch, ConstrainedBatch, InfoDict, Model, Params, PRNGKey
-from critic import update_nu_state
+from critic import update_nu_state, update_nu_state_cct, update_cost_mu, update_cost_t
 from divergence import FDivergence
 
 
@@ -176,6 +176,74 @@ def _update_coptidice(
         {**actor_info, **nu_state_info, **cost_info},
     )
 
+@partial(jax.jit, static_argnames=["alg", "f_divergence"])
+def _update_roidice(
+    alg: ROIDICE,
+    actor: Model,
+    nu_state: Model,
+    cost_mu: Model,
+    cost_t: Model,
+    batch: ConstrainedBatch,
+    alpha: float,
+    discount: float,
+    f_divergence: FDivergence,
+    gradient_penalty_coeff: float,
+    rng: PRNGKey,
+):
+    rng, nu_rng = jax.random.split(rng)
+    new_nu_state, nu_state_info = update_nu_state_cct(
+        batch,
+        nu_state,
+        cost_mu,
+        cost_t,
+        alpha,
+        discount,
+        gradient_penalty_coeff,
+        f_divergence,
+        nu_rng,
+    )
+
+    new_cost_mu, cost_mu_info = update_cost_mu(
+        batch,
+        new_nu_state,
+        cost_mu,
+        cost_t,
+        alpha,
+        discount,
+        f_divergence,
+    )
+
+    new_cost_t, cost_t_info = update_cost_t(
+        batch,
+        new_nu_state,
+        new_cost_mu,
+        cost_t,
+        alpha,
+        discount,
+        f_divergence,
+    )
+
+    rng, actor_rng = jax.random.split(rng)
+    new_actor, actor_info = update_weighted_bc_cct(
+        batch,
+        actor,
+        new_nu_state,
+        new_cost_mu,
+        new_cost_t,
+        alpha,
+        discount,
+        f_divergence,
+        actor_rng,
+    )
+
+    return (
+        rng,
+        new_actor,
+        new_nu_state,
+        new_cost_mu,
+        new_cost_t,
+        {**actor_info, **nu_state_info, **cost_mu_info, **cost_t_info},
+    )
 
 @partial(jax.jit, static_argnames=["alg"])
 def _update_bc(
@@ -316,7 +384,27 @@ class Learner(object):
 
             case ROIDICE():
                 # TODO
-                raise NotImplementedError
+                rng, nu_state_key, cost_mu_key, cost_t_key = jax.random.split(rng, 4)
+
+                self.nu_state = Model.create(
+                    value_def,
+                    inputs=[nu_state_key, observations],
+                    tx=optax.adam(learning_rate=value_lr)
+                )
+
+                mu_def = value_net.CostMu(initial_lambda)
+                self.cost_mu = Model.create(
+                    mu_def,
+                    inputs=[cost_mu_key],
+                    tx=optax.adam(learning_rate=value_lr)
+                )
+
+                t_def = value_net.CostT(initial_lambda)
+                self.cost_t = Model.create(
+                    t_def,
+                    inputs=[cost_t_key],
+                    tx=optax.adam(learning_rate=value_lr)
+                )
 
             case _:
                 pass
@@ -377,7 +465,26 @@ class Learner(object):
             )
         elif self.alg == ROIDICE.DEFAULT:
             # TODO
-            raise NotImplementedError
+            (
+                self.rng,
+                self.actor,
+                self.nu_state,
+                self.cost_mu,
+                self.cost_t,
+                info,
+            ) = _update_roidice(
+                alg=self.alg,
+                actor=self.actor,
+                nu_state=self.nu_state,
+                cost_mu=self.cost_mu,
+                cost_t=self.cost_t,
+                batch=batch,
+                alpha=self.alpha,
+                discount=self.discount,
+                f_divergence=self.divergence,
+                gradient_penalty_coeff=self.gradient_penalty_coeff,
+                rng=self.rng,
+            )
         elif self.alg == BC.DEFAULT:
             self.rng, self.actor, info = _update_bc(
                 alg=self.alg, actor=self.actor, batch=batch, rng=self.rng
@@ -386,23 +493,7 @@ class Learner(object):
             raise NotImplementedError
 
         return info
-
-    def update_constraint(self, batch: ConstrainedBatch) -> InfoDict:
-        self.cost_lambda, info = update_cost_lambda(
-            f_divergence=self.divergence,
-            batch=batch,
-            value=self.value,
-            critic=self.critic,
-            advantage=self.advantage,
-            nu_network=self.value2,
-            cost_lambda=self.cost_lambda,
-            alpha=self.alpha,
-            discount=self.discount,
-            cost_ub=self.cost_ub,
-        )
-
-        return info
-
+    
     def save_ckpt(self, step: int):
         # Silently fail if save directory is not provided.
         if self.ckpt_dir is None:

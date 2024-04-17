@@ -5,18 +5,17 @@ Genius M.S. Kim's 3rd DICE research
 Train and evaluate mujoco environment
 ```
 $ cd ROIDICE
-$ ./scripts/run_mujoco.sh 0 OptiDICE hopper-medium-v2 SoftChi roidice
+$ ./scripts/run_mujoco.sh 0 ROIDICE hopper-medium-v2 SoftChiT 1000 roidice
 ```
 
 Train and evaluate safety-gym environmet
 ```
 $ cd ROIDICE
 $ ./scripts/run_safety_gym.sh 0 COptiDICE Safexp-PointPush1-v0 SoftChi roidice
-```
 
 
-Train and evaluate tabular envirnment
+Train and evaluate tabular environment
 ```
 $ cd ROIDICE
-$ ./scripts/run_tabular.sh
+$ python tabular/run_random_cmdp_roidice.py
 ```

@@ -19,15 +19,12 @@ from typing import Tuple
 
 from absl import logging
 import cvxopt
-# import jax
-# import jax.config
+import jax
 import numpy as np
 import scipy
 import scipy.optimize
 
-
 cvxopt.solvers.options["show_progress"] = False
-# jax.config.update('jax_enable_x64', True)
 
 
 class MDP:
@@ -82,7 +79,6 @@ class CMDP(MDP):
         transition: np.ndarray,
         reward: np.ndarray,
         costs: np.ndarray,
-        cost_thresholds: np.ndarray,
         gamma: float,
     ):
         """Constrained MDP Constructor.
@@ -97,12 +93,10 @@ class CMDP(MDP):
           cost_thresholds: cost thresholds. [num_costs]
           gamma: discount factor (0 ~ 1).
         """
-        assert len(cost_thresholds) == num_costs
         super(CMDP, self).__init__(num_states, num_actions, transition, reward, gamma)
-        self.num_costs = num_costs
+        self.num_costs = 1
         self.costs = np.array(costs)
-        self.cost_thresholds = np.array(cost_thresholds)
-        assert self.costs.shape == (num_costs, num_states, num_actions)
+        assert self.costs.shape == (1, num_states, num_actions)
 
     def __copy__(self):
         cmdp = CMDP(
@@ -118,9 +112,7 @@ class CMDP(MDP):
         return cmdp
 
 
-def generate_random_cmdp(
-    num_states: int, num_actions: int, num_costs: int, cost_thresholds: np.ndarray, gamma: float
-):
+def generate_random_cmdp(num_states: int, num_actions: int, num_costs: int, gamma: float):
     """Create a random CMDP.
 
     Args:
@@ -133,9 +125,6 @@ def generate_random_cmdp(
     Returns:
       a CMDP instance.
     """
-    assert len(cost_thresholds) == num_costs
-    if num_costs != 1:
-        raise NotImplementedError("Only support when num_costs=1")
     initial_state = 0
     absorbing_state = num_states - 1  # the absorbing state index.
 
@@ -155,9 +144,10 @@ def generate_random_cmdp(
     # Define a reward function. Roughly speaking, a non-zero reward is given
     # to the state which is most difficult to reach from the initial state.
     min_value_state, min_value = -1, 1e10
+
     for s in range(num_states - 1):
         reward = np.zeros((num_states, num_actions))
-        reward[s, :] = 1 / (1 - gamma) # 20
+        reward[s, :] = 1 / (1 - gamma)
         transition_tmp = np.array(transition[s, :, :])
         transition[s, :, :] = 0
         transition[s, :, absorbing_state] = 1  # from goal_state to absorbing state
@@ -170,37 +160,16 @@ def generate_random_cmdp(
     # min_value_state will be the goal state that yields a non-zero reward.
     goal_state = min_value_state
     reward = np.zeros((num_states, num_actions))
-    reward[goal_state, :] = 1 / (1 - gamma)
+    reward[goal_state, :] = 1 / (1 - gamma) * 10
     transition[goal_state, :, :] = 0
     transition[goal_state, :, absorbing_state] = 1  # to absorbing one
 
     # Define a cost function.
-    # while True:
-    #     # costs = np.random.beta(0.2, 0.2, (num_costs, num_states, num_actions))
-    #     costs = np.ones((num_costs, num_states, num_actions))# * 100
-
-    #     # For each state, there exists a no-cost action.
-    #     # for s in range(num_states):
-    #     #     a_no_cost = np.random.randint(0, num_actions)
-    #     #     costs[:, s, a_no_cost] += 1
-    #     costs[:, absorbing_state, :] = 0
-    #     cmdp = CMDP(
-    #         num_states, num_actions, num_costs, transition, reward, costs, cost_thresholds, gamma
-    #     )
-    #     pi_copt = solve_cmdp(cmdp)
-    #     v_c_opt = policy_evaluation(cmdp, pi_copt)[2][0, 0]
-    #     if v_c_opt >= cost_thresholds[0] - 1e-4:
-    #         # We want that optimal policy tightly matches the cost constraint.
-    #         break
-
-    # costs = np.ones((num_costs, num_states, num_actions))
-    costs = np.random.beta(0.2, 0.2, (num_costs, num_states, num_actions))
-    # costs *= 2
-    costs[:, absorbing_state] = 0
-
-    cmdp = CMDP(
-        num_states, num_actions, num_costs, transition, reward, costs, cost_thresholds, gamma
-    )
+    costs = 10 * np.random.beta(0.2, 0.2, (num_costs, num_states, num_actions))
+    # For each state, there exists a no-cost action.
+    costs += 1.0
+    costs[:, absorbing_state, :] = 0
+    cmdp = CMDP(num_states, num_actions, num_costs, transition, reward, costs, gamma)
     return cmdp
 
 
@@ -315,7 +284,7 @@ def generate_trajectory(
         return (p.cumsum(axis=1) > r).argmax(axis=1)
 
     trajectory = [[] for i in range(num_episodes)]
-    done = np.zeros(num_episodes, dtype=np.bool_)
+    done = np.zeros(num_episodes, dtype=bool)
     state = np.array([cmdp.initial_state] * num_episodes)
     for t in range(max_timesteps):
         action = random_choice_prob_vectorized(p=pi[state, :])
@@ -338,7 +307,6 @@ def compute_mle_cmdp(
     num_costs: int,
     reward: np.ndarray,
     costs: np.ndarray,
-    cost_thresholds: np.ndarray,
     gamma: float,
     trajectory,
     absorb_unseen: bool = True,
@@ -379,9 +347,7 @@ def compute_mle_cmdp(
             else:
                 transition[s, a, :] = n[s, a, :] / n[s, a, :].sum()
 
-    mle_cmdp = CMDP(
-        num_states, num_actions, num_costs, transition, reward, costs, cost_thresholds, gamma
-    )
+    mle_cmdp = CMDP(num_states, num_actions, num_costs, transition, reward, costs, gamma)
 
     return mle_cmdp, n
 
@@ -423,8 +389,6 @@ def solve_cmdp(cmdp: CMDP):
         bounds=(0, np.inf),
         options={"maxiter": 10000, "tol": 1e-8},
     )
-    # if res is None and np.all(res.x < -1e-4):
-    #     return None
     assert np.all(res.x >= -1e-4)
 
     d = np.clip(res.x.reshape(cmdp.num_states, cmdp.num_actions), 1e-10, np.inf)

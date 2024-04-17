@@ -35,6 +35,9 @@ def evaluate(
         cumulated_discount = 1
         while not done:
             action = agent.sample_actions(observation, temperature=0.0)
+            if np.isnan(action).any():
+                print(f"ep: {_}, action: {action}")
+                exit(0)
             observation, reward, done, info = env.step(action)
             total_reward += reward
             discounted_total_reward += cumulated_discount * reward

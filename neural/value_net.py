@@ -16,7 +16,24 @@ class CostLambda(nn.Module):
         cost_lambda = jnp.clip(jnp.exp(cost_lambda), 0.0, 1e3)
         return cost_lambda
 
+class CostMu(nn.Module):
+    init_value: float
 
+    @nn.compact
+    def __call__(self) -> Array:
+        cost_mu = self.param("mu", lambda _: jnp.log(self.init_value))
+        cost_mu = jnp.exp(cost_mu)
+        return cost_mu
+
+class CostT(nn.Module):
+    init_value: float
+
+    @nn.compact
+    def __call__(self) -> Array:
+        cost_t = self.param("t", lambda _: jnp.log(self.init_value))
+        cost_t = jnp.clip(jnp.exp(cost_t), 0.001, 1e3)
+        return cost_t
+    
 class ValueCritic(nn.Module):
     hidden_dims: Sequence[int]
     layer_norm: bool = False
