@@ -21,8 +21,7 @@ class CostMu(nn.Module):
 
     @nn.compact
     def __call__(self) -> Array:
-        cost_mu = self.param("mu", lambda _: jnp.log(self.init_value))
-        cost_mu = jnp.exp(cost_mu)
+        cost_mu = self.param("mu", lambda _: self.init_value)
         return cost_mu
 
 class CostT(nn.Module):
@@ -31,7 +30,7 @@ class CostT(nn.Module):
     @nn.compact
     def __call__(self) -> Array:
         cost_t = self.param("t", lambda _: jnp.log(self.init_value))
-        cost_t = jnp.clip(jnp.exp(cost_t), 0.001, 1e3)
+        cost_t = jnp.clip(jnp.exp(cost_t), 0.0, 1e3)
         return cost_t
     
 class ValueCritic(nn.Module):

@@ -25,7 +25,7 @@ from dataset_utils import (
     split_into_trajectories,
 )
 from divergence import FDivergence
-from environment import EnvironmentName, SafetyGymEnvironmentName
+from environment import EnvironmentName, SafetyGymEnvironmentName, GymEnvironmentName
 from evaluation import evaluate
 from learner import Learner
 
@@ -39,6 +39,8 @@ flags.DEFINE_integer("seed", 42, "Random seed.")
 flags.DEFINE_integer("eval_episodes", 10, "Number of episodes used for evaluation.")
 flags.DEFINE_integer("log_interval", 1000, "Logging interval.")
 flags.DEFINE_integer("eval_interval", 10000, "Eval interval.")
+flags.DEFINE_boolean("log_video", False, "Whether log eval video.")
+flags.DEFINE_integer("eval_video_interval", 10000, "Eval video interval.")
 flags.DEFINE_integer("batch_size", 256, "Mini batch size.")
 flags.DEFINE_integer("max_steps", int(1e6), "Number of training steps.")
 flags.DEFINE_string("mix_dataset", "None", "mix the dataset")
@@ -52,7 +54,7 @@ flags.DEFINE_float("cost_ub", 0.01, None)
 flags.DEFINE_float("initial_lambda", 1.0, None)
 flags.DEFINE_string("ckpt_dir", None, None, required=False)
 flags.DEFINE_string("eval_ckpt_dir", None, None, required=False)
-flags.DEFINE_string("cost_type", "avg", "Type of cost value assignment - max/avg/min (default: avg)")
+flags.DEFINE_string("cost_type", "ctrl", "Type of cost value assignment - max/avg/min/ctrl (default: ctrl)")
 config_flags.DEFINE_config_file(
     "config",
     "default.py",
@@ -69,18 +71,23 @@ def normalize(dataset):
         dataset.masks,
         dataset.dones_float,
         dataset.next_observations,
+        dataset.costs,
     )
 
     def compute_returns(traj):
         episode_return = 0
-        for _, _, rew, _, _, _ in traj:
+        for _, _, rew, _, _, _, _ in traj:
             episode_return += rew
 
         return episode_return
 
     trajs.sort(key=compute_returns)
-    dataset.rewards /= compute_returns(trajs[-1]) - compute_returns(trajs[0])
+    minmax = compute_returns(trajs[-1]) - compute_returns(trajs[0])
+    dataset.rewards /= minmax
     dataset.rewards *= 1000.0
+
+    dataset.costs /= minmax
+    dataset.costs *= 1000.0
 
 
 def make_env_and_dataset(
@@ -92,7 +99,7 @@ def make_env_and_dataset(
     env = wrappers.SinglePrecision(env)
     if isinstance(env_name, SafetyGymEnvironmentName):
         env = wrappers.CostLowerBound(env)
-    else: # Mujoco
+    elif isinstance(env_name, GymEnvironmentName): # Mujoco
         env = wrappers.ActionRelevantCost(env, option=FLAGS.cost_type)
 
     env.seed(seed)
@@ -121,9 +128,11 @@ def make_env_and_dataset(
         dataset = SafetyGymDataset(
             Path("datasets/") / get_fname(env_name),
         )
-    else:
+    elif isinstance(env_name, GymEnvironmentName):
         # dataset = D4RLDataset(env)
         dataset = ConstrainedD4RLDataset(env, cost_type=FLAGS.cost_type)
+    else:
+        raise NotImplementedError
 
     if env_name in environment.AntMaze:
         # See https://github.com/aviralkumar2907/CQL/blob/master/d4rl/examples/cql_antmaze_new.py#L22
@@ -179,10 +188,10 @@ def main(_):
         entity="roidice",
         project=FLAGS.proj_name,
         group=env_name,
-        name=f"{alg}_alpha{FLAGS.alpha}_seed{FLAGS.seed}",
-        tags=[env_name, alg, "UNCONSTRAINED_DATA", "COST_MAX_ACTION"],
+        name=f"{alg}_alpha{FLAGS.alpha}_seed{FLAGS.seed}_lb",
+        tags=[env_name, alg, "CTRL_COST_WO_WEIGHT", "COST_LB1.0", FLAGS.divergence, f"ALPHA{FLAGS.alpha}"],
         config=kwargs,
-        mode="offline",
+        mode="online",
     )
 
     log = Log(Path("benchmark") / env_name, kwargs)
@@ -201,7 +210,10 @@ def main(_):
 
             if i % FLAGS.eval_interval == 0:
                 # debug
-                tqdm.write(str(update_info))
+                # tqdm.write(f"===i: {i}\n" + str(update_info))
+
+                logging_video = FLAGS.log_video and (i % FLAGS.eval_video_interval == 0)
+
                 (
                     normalized_return,
                     discounted_return,
@@ -209,23 +221,23 @@ def main(_):
                     average_discounted_cost,
                     undiscounted_roi,
                     discounted_roi,
-                ) = evaluate(env_name, agent, env, FLAGS.eval_episodes)
+                ) = evaluate(env_name, agent, env, FLAGS.eval_episodes, logging_video=logging_video)
 
-                tqdm.write(
-                    str(
-                        {
-                            "normalized_return": normalized_return,
-                            "discounted_return": discounted_return,
-                            "undiscounted_cost": undiscounted_cost,
-                            "discounted_cost": average_discounted_cost,
-                            "undiscounted_roi": undiscounted_roi,
-                            "discounted_roi": discounted_roi,
-                        }
-                    )
-                )
+                # tqdm.write(
+                #     str(
+                #         {
+                #             "average_return": normalized_return,
+                #             "discounted_return": discounted_return,
+                #             "undiscounted_cost": undiscounted_cost,
+                #             "discounted_cost": average_discounted_cost,
+                #             "undiscounted_roi": undiscounted_roi,
+                #             "discounted_roi": discounted_roi,
+                #         }
+                #     )
+                # )
                 wandb.log(
                     {
-                        "normalized_return": normalized_return,
+                        "average_return": normalized_return,
                         "discounted_return": discounted_return,
                         "undiscounted_cost": undiscounted_cost,
                         "discounted_cost": average_discounted_cost,
@@ -248,13 +260,13 @@ def main(_):
         average_discounted_cost,
         undiscounted_roi,
         discounted_roi,
-    ) = evaluate(env_name, agent, env, FLAGS.eval_episodes)
+    ) = evaluate(env_name, agent, env, FLAGS.eval_episodes, logging_video=FLAGS.log_video)
 
     # logging
     tqdm.write(
         str(
             {
-                "off_policy_eval/normalized_return": normalized_return,
+                "off_policy_eval/average_return": normalized_return,
                 "off_policy_eval/average_discounted_return": average_discounted_return,
                 "off_policy_eval/discounted_return": discounted_return,
                 "off_policy_eval/undiscounted_cost": undiscounted_cost,
@@ -266,7 +278,7 @@ def main(_):
     )
     wandb.log(
         {
-            "off_policy_eval/normalized_return": normalized_return,
+            "off_policy_eval/average_return": normalized_return,
             "off_policy_eval/average_discounted_return": average_discounted_return,
             "off_policy_eval/discounted_return": discounted_return,
             "off_policy_eval/undiscounted_cost": undiscounted_cost,

@@ -4,7 +4,9 @@ import d4rl
 import gym
 import numpy as np
 
-from environment import EnvironmentName, GymEnvironmentName, SafetyGymEnvironmentName
+import wandb
+
+from environment import EnvironmentName
 
 if typing.TYPE_CHECKING:
     from learner import Learner
@@ -15,6 +17,7 @@ def evaluate(
     agent: "Learner",
     env: gym.Env,
     num_episodes: int,
+    logging_video: bool = False,
     discount: float = 0.99,
 ) -> tuple[float, float, float, float]:
     # stats = {'return': [], 'length': []}
@@ -24,7 +27,8 @@ def evaluate(
     discounted_total_cost_ = []
     discounted_total_reward_ = []
     discounted_total_roi_ = []
-    for _ in range(num_episodes):
+    frames = []
+    for i in range(num_episodes):
         observation: np.ndarray = env.reset()  # type: ignore
         done = False
 
@@ -36,7 +40,7 @@ def evaluate(
         while not done:
             action = agent.sample_actions(observation, temperature=0.0)
             if np.isnan(action).any():
-                print(f"ep: {_}, action: {action}")
+                print(f"\nep: {i}, action: {action}")
                 exit(0)
             observation, reward, done, info = env.step(action)
             total_reward += reward
@@ -44,6 +48,10 @@ def evaluate(
             total_cost += info["cost"]
             discounted_total_cost += cumulated_discount * info["cost"]
             cumulated_discount *= discount
+            if logging_video and i == 0:
+                # the first episode
+                frame = env.render('rgb_array').astype(np.uint8)
+                frames.append(frame)
 
         # compute roi = r / c
         assert total_cost != 0.0, f"Err: Division by Zero (total_cost: {total_cost})"
@@ -63,18 +71,22 @@ def evaluate(
     average_return = np.array(total_reward_).mean()
     average_discounted_return = np.array(discounted_total_reward_).mean()
 
-    if isinstance(env_name, GymEnvironmentName):
-        normalized_return = d4rl.get_normalized_score(env_name, average_return) * 100
-    else:
-        normalized_return = average_return
+    # if isinstance(env_name, GymEnvironmentName):
+        # normalized_return = d4rl.get_normalized_score(env_name, average_return) * 100
+    # else:
     average_undiscounted_cost = np.array(total_cost_).mean()
     average_discounted_cost = np.array(discounted_total_cost_).mean()
 
     average_undiscounted_roi = np.array(total_roi_).mean()
     average_discounted_roi = np.array(discounted_total_roi_).mean()
 
+    # logging video
+    if logging_video:
+        frames = np.transpose(np.array(frames), (0, 3, 1, 2)) # (t, c, h, w)
+        wandb.log({f"video/{env_name}": wandb.Video(frames, fps=8)})
+
     return (
-        normalized_return,
+        average_return,
         average_discounted_return,
         average_undiscounted_cost,
         average_discounted_cost,

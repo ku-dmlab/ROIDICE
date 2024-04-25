@@ -86,6 +86,7 @@ def update_nu_state(
     new_nu_state, info = nu_state.apply_gradient(nu_loss_fn)
     return new_nu_state, info
 
+
 def update_nu_state_cct(
     batch: ConstrainedBatch,
     nu_state: Model,
@@ -109,7 +110,7 @@ def update_nu_state_cct(
         initial_nu = nu_state.apply({"params": params}, batch.initial_observations)
         nu = nu_state.apply({"params": params}, batch.observations)
         next_nu = nu_state.apply({"params": params}, batch.next_observations)
-        e = batch.rewards - discount * next_nu - nu
+        e = batch.rewards + discount * next_nu - nu
 
         state_action_ratio = divergence.state_action_ratio(
             nu,
@@ -125,25 +126,25 @@ def update_nu_state_cct(
         )
 
         initial_loss = t * (1 - discount) * initial_nu
-        non_initial_loss = state_action_ratio * (e - mu * jnp.array(batch.costs)) - alpha * divergence.f(
-            state_action_ratio, f_divergence, t=t
+        non_initial_loss = state_action_ratio * (
+            e - mu * jnp.array(batch.costs)
+        ) - alpha * divergence.f(state_action_ratio, f_divergence, t=t)
+
+        interpolation_epsilon = jax.random.uniform(rng)
+        interpolated_observations = (
+            batch.initial_observations * interpolation_epsilon
+            + batch.next_observations * (1 - interpolation_epsilon)
         )
 
-        # interpolation_epsilon = jax.random.uniform(rng)
-        # interpolated_observations = (
-        #     batch.initial_observations * interpolation_epsilon
-        #     + batch.next_observations * (1 - interpolation_epsilon)
-        # )
+        # regularization term
+        value2_grad = grad_nu(params, interpolated_observations)
+        value2_grad_norm = jnp.linalg.norm(value2_grad, axis=1)
+        value2_grad_penalty = gradient_penalty_coeff * jnp.mean(
+            jax.nn.relu(value2_grad_norm - 5) ** 2
+        )
 
-        # # regularization term
-        # value2_grad = grad_nu(params, interpolated_observations)
-        # value2_grad_norm = jnp.linalg.norm(value2_grad, axis=1)
-        # value2_grad_penalty = gradient_penalty_coeff * jnp.mean(
-        #     jax.nn.relu(value2_grad_norm - 5) ** 2
-        # )
-
-        # return initial_loss.mean() + non_initial_loss.mean() + value2_grad_penalty, {
-        return initial_loss.mean() + non_initial_loss.mean(), {
+        return initial_loss.mean() + non_initial_loss.mean() + value2_grad_penalty, {
+            # return initial_loss.mean() + non_initial_loss.mean(), {
             "loss/nu(s0)": initial_loss.mean(),
             "loss/nu(s)": non_initial_loss.mean(),
             # "loss/nu(s)_grad_penalty": value2_grad_penalty,
@@ -233,6 +234,7 @@ def update_cost_lambda(
     new_cost_lambda, info = cost_lambda.apply_gradient(lambda_loss_fn)
     return new_cost_lambda, info
 
+
 def update_cost_mu(
     batch: ConstrainedBatch,
     nu_state: Model,
@@ -250,13 +252,13 @@ def update_cost_mu(
     def mu_loss_fn(params: Params) -> tuple[Array, InfoDict]:
         mu = cost_mu.apply({"params": params})
 
-        e = batch.rewards - discount * next_nu - nu
-        f_temp = divergence.f_derivative_inverse((e - mu * batch.costs) / alpha, f_divergence, t=t)
+        e = batch.rewards + discount * next_nu - nu
+        f_temp = divergence.f_derivative_inverse((e - mu * jnp.array(batch.costs)) / alpha, f_divergence, t=t)
         state_action_ratio = jax.nn.relu(f_temp)
 
         f = divergence.f(state_action_ratio, f_divergence, t=t)
 
-        loss = -state_action_ratio * mu * batch.costs - alpha * f
+        loss = state_action_ratio * (e - mu * jnp.array(batch.costs)) - alpha * f
         loss = loss.mean() + mu
         return loss, {
             "loss/mu": loss,
@@ -265,6 +267,7 @@ def update_cost_mu(
 
     new_cost_mu, info = cost_mu.apply_gradient(mu_loss_fn)
     return new_cost_mu, info
+
 
 def update_cost_t(
     batch: ConstrainedBatch,
@@ -275,6 +278,7 @@ def update_cost_t(
     discount: float,
     f_divergence: FDivergence,
 ):
+    initial_nu = nu_state(batch.initial_observations)
     nu = nu_state(batch.observations)
     next_nu = nu_state(batch.next_observations)
 
@@ -283,15 +287,16 @@ def update_cost_t(
     def t_loss_fn(params: Params) -> tuple[Array, InfoDict]:
         t = cost_t.apply({"params": params})
 
-        e = batch.rewards - discount * next_nu - nu
+        e = batch.rewards + discount * next_nu - nu
         f_temp = divergence.f_derivative_inverse((e - mu * batch.costs) / alpha, f_divergence, t=t)
         state_action_ratio = jax.nn.relu(f_temp)
 
         f = divergence.f(state_action_ratio, f_divergence, t=t)
 
-        initial_loss = t * (1 - discount) * nu
-        loss = alpha * f
-        loss = -initial_loss.mean() + loss.mean()
+        initial_loss = t * (1 - discount) * initial_nu
+        loss = state_action_ratio * (e - mu * jnp.array(batch.costs)) - alpha * f
+        loss = -initial_loss.mean() - loss.mean()
+
         return loss, {
             "loss/t": loss,
             "cost/t": t,

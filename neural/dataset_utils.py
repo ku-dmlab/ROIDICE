@@ -21,7 +21,7 @@ from common import Batch, ConstrainedBatch
 
 
 def split_into_trajectories(
-    observations, actions, rewards, masks, dones_float, next_observations
+    observations, actions, rewards, masks, dones_float, next_observations, costs,
 ):
     trajs = [[]]
 
@@ -34,6 +34,7 @@ def split_into_trajectories(
                 masks[i],
                 dones_float[i],
                 next_observations[i],
+                costs[i],
             )
         )
         if dones_float[i] == 1.0 and i + 1 < len(observations):
@@ -300,13 +301,23 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
             costs = np.mean(abs(dataset["actions"]), axis=1) + eps
         elif cost_type == "min":
             costs = np.min(abs(dataset["actions"]), axis=1) + eps
+        elif cost_type == "ctrl":
+            costs = np.sum(dataset['actions'] ** 2, axis=1)
         else:
             raise NotImplementedError
+
+        # subtract ctrl_cost
+        ctrl_cost_weight = 0.001 # 0.1 (hopper)
+        ctrl_cost = ctrl_cost_weight * costs
+        pure_rewards = dataset['rewards'] + ctrl_cost # forward_reward
+
+        # lower bound of costs
+        costs += 1.0
 
         super().__init__(
             dataset["observations"].astype(np.float32),
             actions=dataset["actions"].astype(np.float32),
-            rewards=dataset["rewards"].astype(np.float32),
+            rewards=pure_rewards.astype(np.float32),
             masks=1.0 - dones_float.astype(np.float32),
             dones_float=dones_float.astype(np.float32),
             next_observations=dataset["next_observations"].astype(np.float32),

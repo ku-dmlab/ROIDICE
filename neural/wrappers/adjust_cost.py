@@ -15,9 +15,19 @@ class ActionRelevantCost(gym.Wrapper):
             info['cost'] = np.mean(abs(action)) + self._eps
         elif self._option == "min":
             info['cost'] = np.min(abs(action)) + self._eps
+        elif self._option == "ctrl":
+            info['cost'] = np.sum(action ** 2)        
         else:
             raise NotImplementedError
-        return obs, rewards, done, info
+        
+        # subtract ctrl_cost
+        ctrl_cost_weight = 0.001 # 0.1 (hopper)
+        ctrl_cost = ctrl_cost_weight * info['cost']
+        pure_rewards = rewards + ctrl_cost # forward_reward
+
+        info['cost'] += 1.0
+        
+        return obs, pure_rewards, done, info
 
 class CostLowerBound(gym.Wrapper):
     def __init__(self, env, eps=1e-5):

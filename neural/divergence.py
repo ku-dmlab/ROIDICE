@@ -13,6 +13,7 @@ class FDivergence(str, Enum):
     CHI = "Chi"
     SOFT_CHI = "SoftChi"
     DUAL_DICE = "DualDICE"
+    CHI_T = "ChiT"
     SOFT_CHI_T = "SoftChiT"
 
 
@@ -44,8 +45,11 @@ def f(x: ArrayLike, f_divergence: FDivergence, t: float = 1.0, eps: float = 1e-1
             return jnp.where(x < 1.0, x * jnp.log(x + eps) - x + 1, (x - 1) ** 2 / 2)
         case FDivergence.DUAL_DICE:
             return 2 / 3 * jnp.abs(x) ** (3 / 2)
+        case FDivergence.CHI_T:
+            return (x - t) ** 2 / 2
         case FDivergence.SOFT_CHI_T:
-            return jnp.where(x < t,  (x - t + 1) * jnp.log(x - t + 1 + eps) - (x - t), (x - t) ** 2 / 2)
+            return jnp.where(x < t, (x / t) * jnp.log(x / t + eps) - (x / t) + 1, (x - t) ** 2 / 2)
+            # return jnp.where(x < t,  (x - t + 1) * jnp.log(x - t + 1 + eps) - (x - t), (x - t) ** 2 / 2)
         case _:
             assert_never(f_divergence)
 
@@ -80,8 +84,11 @@ def f_derivative_inverse(y: ArrayLike, f_divergence: FDivergence, t: float = 1.0
             return jnp.where(y < 0.0, jnp.exp(jnp.where(y < 0.0, y, 0.0)), y + 1)
         case FDivergence.DUAL_DICE:
             raise ValueError(f"This funtion doesn't exist for {f_divergence}.")
+        case FDivergence.CHI_T:
+            return y + t
         case FDivergence.SOFT_CHI_T:
-            return jnp.where(y < 0.0, jnp.exp(jnp.where(y < 0.0, y, 0.0)) + t - 1, y + t)
+            return jnp.where(y < 0.0, t * jnp.exp(jnp.where(t * y < 0.0, t * y, 0.0)), y + t)
+            # return jnp.where(y < 0.0, jnp.exp(jnp.where(y < 0.0, y, 0.0)) + t - 1, y + t)
         case _:
             assert_never(f_divergence)
 
@@ -290,5 +297,5 @@ def state_action_ratio(
         e = rewards - cost_coeff * costs + discount * next_nu - nu
         return jax.nn.relu(f_derivative_inverse(e / alpha, f_divergence))
     else:
-        e = rewards - discount * next_nu - nu
+        e = rewards + discount * next_nu - nu
         return jax.nn.relu(f_derivative_inverse((e - mu * costs) / alpha, f_divergence, t=t))
