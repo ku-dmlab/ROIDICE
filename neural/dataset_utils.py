@@ -349,10 +349,12 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
         # add ctrl_cost
         if "half" in env_name:
             ctrl_cost_weight = 0.1
+            healty_reward = 0.0
         else:  # hopper, walker2d
             ctrl_cost_weight = 0.001
+            healty_reward = 1.0
         ctrl_cost = ctrl_cost_weight * costs
-        pure_rewards = dataset["rewards"] + ctrl_cost  # forward_reward
+        pure_rewards = dataset["rewards"] - healty_reward + ctrl_cost  # forward_reward
 
         # set cost func
         costs = cost_weight * costs + cost_lb
