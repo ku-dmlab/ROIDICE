@@ -14,18 +14,21 @@ class Hopper(str, Enum):
     MEDIUM = "hopper-medium-v2"
     MEDIUM_REPLAY = "hopper-medium-replay-v2"
     MEDIUM_EXPERT = "hopper-medium-expert-v2"
+    EXPERT = "hopper-expert-v2"
 
 
 class Halfcheetah(str, Enum):
     MEDIUM = "halfcheetah-medium-v2"
     MEDIUM_REPLAY = "halfcheetah-medium-replay-v2"
     MEDIUM_EXPERT = "halfcheetah-medium-expert-v2"
+    EXPERT = "halfcheetah-expert-v2"
 
 
 class Walker2D(str, Enum):
     MEDIUM = "walker2d-medium-v2"
     MEDIUM_REPLAY = "walker2d-medium-replay-v2"
     MEDIUM_EXPERT = "walker2d-medium-expert-v2"
+    EXPERT = "walker2d-expert-v2"
 
 
 class Point(str, Enum):

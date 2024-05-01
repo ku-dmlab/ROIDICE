@@ -1,3 +1,4 @@
+import os
 import typing
 
 import d4rl
@@ -5,6 +6,7 @@ import gym
 import numpy as np
 
 import wandb
+from PIL import Image
 
 from environment import EnvironmentName
 
@@ -17,9 +19,14 @@ def evaluate(
     agent: "Learner",
     env: gym.Env,
     num_episodes: int,
-    logging_video: bool = False,
     discount: float = 0.99,
+    max_step: int = 1000,
+    logging_video: bool = False,
+    logging_path: str = "./results/neural/",
 ) -> tuple[float, float, float, float]:
+    if logging_video:
+        os.makedirs(logging_path, exist_ok=True)
+
     # stats = {'return': [], 'length': []}
     total_cost_ = []
     total_reward_ = []
@@ -37,7 +44,8 @@ def evaluate(
         total_cost = 0.0
         discounted_total_cost = 0.0
         cumulated_discount = 1
-        while not done:
+        cnt = 0
+        while not done or cnt < max_step:
             action = agent.sample_actions(observation, temperature=0.0)
             if np.isnan(action).any():
                 print(f"\nep: {i}, action: {action}")
@@ -52,6 +60,11 @@ def evaluate(
                 # the first episode
                 frame = env.render('rgb_array').astype(np.uint8)
                 frames.append(frame)
+                # save
+                frame = Image.fromarray(frame)
+                frame.save(os.path.join(logging_path, f"step{cnt:04d}.png"))
+
+            cnt += 1
 
         # compute roi = r / c
         assert total_cost != 0.0, f"Err: Division by Zero (total_cost: {total_cost})"

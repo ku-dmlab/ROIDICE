@@ -2,10 +2,13 @@ import gym
 import numpy as np
 
 class ActionRelevantCost(gym.Wrapper):
-    def __init__(self, env, option="avg", eps=1e-5):
+    def __init__(self, env, env_name, option, cost_weight, cost_lb, eps=1e-5):
         super().__init__(env)
         self._eps = eps
+        self._env_name = env_name
         self._option = option
+        self._cost_weight = cost_weight
+        self._cost_lb = cost_lb
 
     def step(self, action):
         obs, rewards, done, info = super().step(action)
@@ -20,12 +23,16 @@ class ActionRelevantCost(gym.Wrapper):
         else:
             raise NotImplementedError
         
-        # subtract ctrl_cost
-        ctrl_cost_weight = 0.001 # 0.1 (hopper)
+        # add ctrl_cost
+        if 'half' in self._env_name:
+            ctrl_cost_weight = 0.1
+        else: # hopper, walker2d
+            ctrl_cost_weight = 0.001
         ctrl_cost = ctrl_cost_weight * info['cost']
         pure_rewards = rewards + ctrl_cost # forward_reward
 
-        info['cost'] += 1.0
+        # set cost func
+        info['cost'] = self._cost_weight * info['cost'] + self._cost_lb
         
         return obs, pure_rewards, done, info
 

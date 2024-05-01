@@ -46,15 +46,20 @@ flags.DEFINE_integer("max_steps", int(1e6), "Number of training steps.")
 flags.DEFINE_string("mix_dataset", "None", "mix the dataset")
 flags.DEFINE_boolean("tqdm", True, "Use tqdm progress bar.")
 flags.DEFINE_float("alpha", 1.0, "temperature")
-flags.DEFINE_float("beta", 1.0, "temperature2")
 flags.DEFINE_float("lr_ratio", 0.01, None)
 flags.DEFINE_float("gradient_penalty_coeff", 1e-5, None)
-flags.DEFINE_bool("train_cost", None, None)
 flags.DEFINE_float("cost_ub", 0.01, None)
 flags.DEFINE_float("initial_lambda", 1.0, None)
 flags.DEFINE_string("ckpt_dir", None, None, required=False)
 flags.DEFINE_string("eval_ckpt_dir", None, None, required=False)
-flags.DEFINE_string("cost_type", "ctrl", "Type of cost value assignment - max/avg/min/ctrl (default: ctrl)")
+flags.DEFINE_string(
+    "cost_type", "ctrl", "Type of cost value assignment - max/avg/min/ctrl (default: ctrl)"
+)
+flags.DEFINE_float("cost_weight", 1.0, "Weight of cost.")
+flags.DEFINE_float("cost_lb", 0.1, "Lower bound of cost.")
+
+flags.DEFINE_string("entity", "hy-kiera", "wandb log entity.")
+
 config_flags.DEFINE_config_file(
     "config",
     "default.py",
@@ -99,8 +104,10 @@ def make_env_and_dataset(
     env = wrappers.SinglePrecision(env)
     if isinstance(env_name, SafetyGymEnvironmentName):
         env = wrappers.CostLowerBound(env)
-    elif isinstance(env_name, GymEnvironmentName): # Mujoco
-        env = wrappers.ActionRelevantCost(env, option=FLAGS.cost_type)
+    elif isinstance(env_name, GymEnvironmentName):  # Mujoco
+        env = wrappers.ActionRelevantCost(
+            env, env_name, FLAGS.cost_type, FLAGS.cost_weight, FLAGS.cost_lb
+        )
 
     env.seed(seed)
     env.action_space.seed(seed)
@@ -130,7 +137,9 @@ def make_env_and_dataset(
         )
     elif isinstance(env_name, GymEnvironmentName):
         # dataset = D4RLDataset(env)
-        dataset = ConstrainedD4RLDataset(env, cost_type=FLAGS.cost_type)
+        dataset = ConstrainedD4RLDataset(
+            env, env_name, FLAGS.cost_type, FLAGS.cost_weight, FLAGS.cost_lb
+        )
     else:
         raise NotImplementedError
 
@@ -149,6 +158,9 @@ def make_env_and_dataset(
 
 
 def main(_):
+    # set seed
+    np.random.seed(FLAGS.seed)
+
     env_name = environment.parse_string(FLAGS.env_name)
     alg = algorithm.parse_string(FLAGS.alg)
     divergence = FDivergence(FLAGS.divergence)
@@ -157,7 +169,6 @@ def main(_):
 
     kwargs = dict(FLAGS.config)
     kwargs["alpha"] = FLAGS.alpha
-    kwargs["beta"] = FLAGS.beta
     kwargs["lr_ratio"] = FLAGS.lr_ratio
     kwargs["alg"] = alg
     kwargs["divergence"] = divergence
@@ -184,12 +195,23 @@ def main(_):
     kwargs["seed"] = FLAGS.seed
     kwargs["env_name"] = env_name
 
+    kwargs["cost_lb"] = FLAGS.cost_lb
+    kwargs["cost_weight"] = FLAGS.cost_weight
+
     wandb.init(
-        entity="roidice",
+        entity=FLAGS.entity,
         project=FLAGS.proj_name,
         group=env_name,
-        name=f"{alg}_alpha{FLAGS.alpha}_seed{FLAGS.seed}_lb",
-        tags=[env_name, alg, "CTRL_COST_WO_WEIGHT", "COST_LB1.0", FLAGS.divergence, f"ALPHA{FLAGS.alpha}"],
+        name=f"{alg}_alpha{FLAGS.alpha}",
+        tags=[
+            env_name,
+            alg,
+            f"COST_WEIGHT{FLAGS.cost_weight}",
+            f"COST_LB{FLAGS.cost_lb}",
+            FLAGS.divergence,
+            f"ALPHA{FLAGS.alpha}",
+            f"SEED{FLAGS.seed}",
+        ],
         config=kwargs,
         mode="online",
     )
@@ -204,7 +226,6 @@ def main(_):
             batch, unnormalized_return = dataset.sample(FLAGS.batch_size)
             update_info = agent.update(batch)
 
-
             if i % FLAGS.log_interval == 0:
                 wandb.log(update_info, i)
 
@@ -212,7 +233,11 @@ def main(_):
                 # debug
                 # tqdm.write(f"===i: {i}\n" + str(update_info))
 
-                logging_video = FLAGS.log_video and (i % FLAGS.eval_video_interval == 0)
+                # logging args
+                logging_kwargs = {
+                    "logging_video": FLAGS.log_video and (i % FLAGS.eval_video_interval == 0),
+                    "logging_path": os.path.join(FLAGS.save_dir, f"{env_name}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/log{i}"),
+                }
 
                 (
                     normalized_return,
@@ -221,7 +246,7 @@ def main(_):
                     average_discounted_cost,
                     undiscounted_roi,
                     discounted_roi,
-                ) = evaluate(env_name, agent, env, FLAGS.eval_episodes, logging_video=logging_video)
+                ) = evaluate(env_name, agent, env, FLAGS.eval_episodes, **logging_kwargs)
 
                 # tqdm.write(
                 #     str(
@@ -244,7 +269,7 @@ def main(_):
                         "undiscounted_roi": undiscounted_roi,
                         "discounted_roi": discounted_roi,
                     },
-                    i,
+                    i - 1,
                 )
 
         # agent.save_ckpt(i)

@@ -21,7 +21,13 @@ from common import Batch, ConstrainedBatch
 
 
 def split_into_trajectories(
-    observations, actions, rewards, masks, dones_float, next_observations, costs,
+    observations,
+    actions,
+    rewards,
+    masks,
+    dones_float,
+    next_observations,
+    costs,
 ):
     trajs = [[]]
 
@@ -181,9 +187,7 @@ class D4RLDataset(Dataset):
 
         for i in range(len(dones_float) - 1):
             observation_gap = float(
-                np.linalg.norm(
-                    dataset["observations"][i + 1] - dataset["next_observations"][i]
-                )
+                np.linalg.norm(dataset["observations"][i + 1] - dataset["next_observations"][i])
             )
 
             if observation_gap > 1e-6 or dataset["terminals"][i] == 1.0:
@@ -221,11 +225,15 @@ class D4RLDataset(Dataset):
             size=len(dataset["observations"]),
         )
 
+
 class ConstrainedD4RLDataset(ConstrainedDatasets):
     def __init__(
         self,
         env: gym.Env,
-        cost_type: str = "avg",
+        env_name: str,
+        cost_type: str,
+        cost_weight: float,
+        cost_lb: float,
         add_env: Optional[gym.Env] = None,
         expert_ratio: float = 1.0,
         clip_to_eps: bool = True,
@@ -266,9 +274,7 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
 
         for i in range(len(dones_float) - 1):
             observation_gap = float(
-                np.linalg.norm(
-                    dataset["observations"][i + 1] - dataset["next_observations"][i]
-                )
+                np.linalg.norm(dataset["observations"][i + 1] - dataset["next_observations"][i])
             )
 
             if observation_gap > 1e-6 or dataset["terminals"][i] == 1.0:
@@ -294,38 +300,83 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
         terminal_indexes = np.insert(terminal_indexes, 0, -1)[:-1]
         initial_observations = dataset["observations"][terminal_indexes + 1]  # type: ignore
 
+        # absorbing state
+        absorbing_dim = np.zeros(len(dataset["observations"]))
+        observations = np.concatenate(
+            (dataset["observations"], absorbing_dim[:, np.newaxis]), axis=1
+        )
+        next_observations = np.concatenate(
+            (dataset["next_observations"], absorbing_dim[:, np.newaxis]), axis=1
+        )
+        actions = dataset["actions"].copy()
+        absorbing_state = np.zeros(len(observations[0]))
+        absorbing_action = np.zeros(len(actions[0]))
+        for n, t in enumerate(terminal_indexes): # TODO: too slow!
+            insert_idx = t + (n * 2) + 1
+            # observations
+            observations = np.insert(
+                observations,
+                insert_idx,
+                np.vstack((next_observations[insert_idx - 1], absorbing_state)),
+                axis=0,
+            )
+            observations[i + 1, -1] = 1
+            next_observations = np.insert(
+                next_observations, insert_idx, np.vstack((absorbing_state, absorbing_state)), axis=0
+            )
+            next_observations[i : i + 2, -1] = 1
+            # actions
+            actions = np.insert(
+                actions, insert_idx, np.vstack((absorbing_action, absorbing_action)), axis=0
+            )
+        observations = np.vstack((observations, next_observations[-1], absorbing_state))
+        observations[-1, -1] = 1
+        next_observations = np.vstack((next_observations, absorbing_state, absorbing_state))
+        next_observations[-2:, -1] = 1
+
         # cost assignment
         if cost_type == "max":
-            costs = np.max(abs(dataset["actions"]), axis=1) + eps
+            costs = np.max(abs(dataset['actions']), axis=1) + eps
         elif cost_type == "avg":
-            costs = np.mean(abs(dataset["actions"]), axis=1) + eps
+            costs = np.mean(abs(dataset['actions']), axis=1) + eps
         elif cost_type == "min":
             costs = np.min(abs(dataset["actions"]), axis=1) + eps
         elif cost_type == "ctrl":
-            costs = np.sum(dataset['actions'] ** 2, axis=1)
+            costs = np.sum(dataset["actions"]**2, axis=1)
         else:
             raise NotImplementedError
 
-        # subtract ctrl_cost
-        ctrl_cost_weight = 0.001 # 0.1 (hopper)
+        # add ctrl_cost
+        if "half" in env_name:
+            ctrl_cost_weight = 0.1
+        else:  # hopper, walker2d
+            ctrl_cost_weight = 0.001
         ctrl_cost = ctrl_cost_weight * costs
-        pure_rewards = dataset['rewards'] + ctrl_cost # forward_reward
+        pure_rewards = dataset["rewards"] + ctrl_cost  # forward_reward
 
-        # lower bound of costs
-        costs += 1.0
+        # set cost func
+        costs = cost_weight * costs + cost_lb
+
+        # for absorbing state
+        for _ in range(2):
+            rewards = np.insert(pure_rewards, terminal_indexes+1, 0.0, axis=0)
+            costs = np.insert(costs, terminal_indexes+1, 0.001, axis=0)
+        rewards = np.concatenate((rewards, np.zeros(2)))
+        costs = np.concatenate((costs, np.zeros(2) + 0.001))
 
         super().__init__(
-            dataset["observations"].astype(np.float32),
-            actions=dataset["actions"].astype(np.float32),
-            rewards=pure_rewards.astype(np.float32),
+            observations=observations.astype(np.float32),
+            actions=actions.astype(np.float32),
+            rewards=rewards.astype(np.float32),
             masks=1.0 - dones_float.astype(np.float32),
             dones_float=dones_float.astype(np.float32),
-            next_observations=dataset["next_observations"].astype(np.float32),
+            next_observations=next_observations.astype(np.float32),
             timesteps=timesteps,
             initial_observations=initial_observations.astype(np.float32),
-            size=len(dataset["observations"]),
+            size=len(observations),
             costs=costs,
         )
+
 
 class SafetyGymDataset(ConstrainedDatasets):
     def __init__(
@@ -351,9 +402,7 @@ class SafetyGymDataset(ConstrainedDatasets):
 
 class ReplayBuffer(Dataset):
     def __init__(self, observation_space: Box, action_dim: int, capacity: int):
-        observations = np.empty(
-            (capacity, *observation_space.shape), dtype=observation_space.dtype
-        )
+        observations = np.empty((capacity, *observation_space.shape), dtype=observation_space.dtype)
         actions = np.empty((capacity, action_dim), dtype=np.float32)
         rewards = np.empty((capacity,), dtype=np.float32)
         masks = np.empty((capacity,), dtype=np.float32)
@@ -379,9 +428,7 @@ class ReplayBuffer(Dataset):
         self.capacity = capacity
 
     def initialize_with_dataset(self, dataset: Dataset, num_samples: Optional[int]):
-        assert (
-            self.insert_index == 0
-        ), "Can insert a batch online in an empty replay buffer."
+        assert self.insert_index == 0, "Can insert a batch online in an empty replay buffer."
 
         dataset_size = len(dataset.observations)
 
