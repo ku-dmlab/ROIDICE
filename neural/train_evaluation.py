@@ -206,8 +206,8 @@ def main(_):
         tags=[
             env_name,
             alg,
-            f"COST_WEIGHT{FLAGS.cost_weight}",
-            f"COST_LB{FLAGS.cost_lb}",
+            # f"COST_WEIGHT{FLAGS.cost_weight}",
+            # f"COST_LB{FLAGS.cost_lb}",
             FLAGS.divergence,
             f"ALPHA{FLAGS.alpha}",
             f"SEED{FLAGS.seed}",

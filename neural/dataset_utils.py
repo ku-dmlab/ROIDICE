@@ -302,37 +302,39 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
 
         # absorbing state
         absorbing_dim = np.zeros(len(dataset["observations"]))
-        observations = np.concatenate(
-            (dataset["observations"], absorbing_dim[:, np.newaxis]), axis=1
-        )
-        next_observations = np.concatenate(
+        _observations = np.concatenate((dataset["observations"], absorbing_dim[:, np.newaxis]), axis=1)
+        _next_observations = np.concatenate(
             (dataset["next_observations"], absorbing_dim[:, np.newaxis]), axis=1
         )
-        actions = dataset["actions"].copy()
-        absorbing_state = np.zeros(len(observations[0]))
-        absorbing_action = np.zeros(len(actions[0]))
-        for n, t in enumerate(terminal_indexes): # TODO: too slow!
-            insert_idx = t + (n * 2) + 1
+        absorbing_state = np.zeros(len(_observations[0]))
+        absorbing_action = np.zeros(len(dataset['actions'][0]))
+        b, o_d = _observations.shape
+        _, a_d = dataset["actions"].shape
+        observations = np.array([])
+        next_observations = np.array([])
+        actions = np.array([])
+        s = 0
+        term = np.append(terminal_indexes, np.array(b - 1)) # add the last terminal index
+        for t in tqdm(term):
             # observations
-            observations = np.insert(
-                observations,
-                insert_idx,
-                np.vstack((next_observations[insert_idx - 1], absorbing_state)),
-                axis=0,
-            )
-            observations[i + 1, -1] = 1
-            next_observations = np.insert(
-                next_observations, insert_idx, np.vstack((absorbing_state, absorbing_state)), axis=0
-            )
-            next_observations[i : i + 2, -1] = 1
+            obs_tmp = np.vstack((_observations[s : t + 1], _next_observations[t], absorbing_state))
+            obs_tmp[-1, -1] = 1
+            observations = np.append(observations, obs_tmp)
+            # next observations
+            next_obs_tmp = np.vstack((_next_observations[s : t + 1], absorbing_state, absorbing_state))
+            next_obs_tmp[-2:, -1] = 1
+            next_observations = np.append(next_observations, next_obs_tmp)
             # actions
-            actions = np.insert(
-                actions, insert_idx, np.vstack((absorbing_action, absorbing_action)), axis=0
-            )
-        observations = np.vstack((observations, next_observations[-1], absorbing_state))
-        observations[-1, -1] = 1
-        next_observations = np.vstack((next_observations, absorbing_state, absorbing_state))
-        next_observations[-2:, -1] = 1
+            a_tmp = np.vstack((dataset["actions"][s:t+1], absorbing_action, absorbing_action))
+            actions = np.append(actions, a_tmp)
+            s = t + 1
+
+        observations = observations.reshape(-1, o_d)
+        next_observations = next_observations.reshape(-1, o_d)
+        actions = actions.reshape(-1, a_d)
+
+        assert observations.shape == next_observations.shape
+        assert len(absorbing_action) == len(actions[0])
 
         # cost assignment
         if cost_type == "max":

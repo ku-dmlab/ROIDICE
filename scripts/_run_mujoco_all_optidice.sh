@@ -1,21 +1,19 @@
 #!/bin/bash
 
-ALPHAS=(1.0 0.1 0.01 0.001)
-COST_LB=(1 2)
-COST_WEIGHT=(0.1 1.0)
+ALPHAS=(0.01 0.1 1.0 10.0)
+SEEDS=(0 1 2 3 4)
 
 GPU_ID="$1"
-ALG="$2"
-ENV="$3" #("hopper-medium-expert-v2" "halfcheetah-medium-expert-v2" "walker2d-medium-expert-v2")
-DIV="$4"
-PROJ_NAME="roidice_medium_hp_search"
+ALG="OptiDICE"
+ENV="$2" #("hopper-medium-expert-v2" "halfcheetah-medium-expert-v2" "walker2d-medium-expert-v2")
+DIV="SoftChi"
+PROJ_NAME="roidice_absorbing_healthy"
 
 EVAL_INTERVAL=100
 EVAL_EPISODES=10
 
+for seed in ${SEEDS[*]}; do
 for alpha in ${ALPHAS[*]}; do
-for cost_lb in ${COST_LB[*]}; do
-for cost_weight in ${COST_WEIGHT[*]}; do
 XLA_PYTHON_CLIENT_MEM_FRACTION=.20 CUDA_VISIBLE_DEVICES="$GPU_ID" python neural/train_evaluation.py \
     --alg "$ALG" \
     --proj_name $PROJ_NAME \
@@ -27,12 +25,8 @@ XLA_PYTHON_CLIENT_MEM_FRACTION=.20 CUDA_VISIBLE_DEVICES="$GPU_ID" python neural/
     --alpha "$alpha" \
     --eval_interval $EVAL_INTERVAL \
     --eval_episodes $EVAL_EPISODES \
-    --cost_lb $cost_lb \
-    --cost_weight $cost_weight \
     --log_video True \
-    --seed 0 \
-    --entity "hy-kiera" \
-    ${@:4}
-done
+    --seed $seed \
+    ${@:3}
 done
 done
