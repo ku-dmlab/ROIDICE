@@ -281,6 +281,13 @@ def main(_):
         log(f"Loaded checkpoints from {FLAGS.ckpt_dir}")
 
     # Off-policy evaluation
+    logging_kwargs = {
+        "logging_video": FLAGS.log_video,
+        "logging_path": os.path.join(
+            FLAGS.save_dir,
+            f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/ope/",
+        ),
+    }
     (
         normalized_return,
         average_discounted_return,
@@ -288,7 +295,7 @@ def main(_):
         average_discounted_cost,
         undiscounted_roi,
         discounted_roi,
-    ) = evaluate(env_name, agent, env, FLAGS.eval_episodes, logging_video=FLAGS.log_video)
+    ) = evaluate(env_name, agent, env, FLAGS.eval_episodes, **logging_kwargs)
 
     # logging
     tqdm.write(
