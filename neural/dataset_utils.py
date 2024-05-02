@@ -300,6 +300,22 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
         terminal_indexes = np.insert(terminal_indexes, 0, -1)[:-1]
         initial_observations = dataset["observations"][terminal_indexes + 1]  # type: ignore
 
+        # cost assignment
+        costs = np.sum(dataset["actions"]**2, axis=1)
+
+        # add ctrl_cost
+        if "half" in env_name:
+            ctrl_cost_weight = 0.1
+            healty_reward = 0.0
+        else:  # hopper, walker2d
+            ctrl_cost_weight = 0.001
+            healty_reward = 1.0
+        ctrl_cost = ctrl_cost_weight * costs
+        pure_rewards = dataset["rewards"] - healty_reward + ctrl_cost  # forward_reward
+
+        # set cost func
+        affine_costs = cost_weight * costs + cost_lb
+
         # absorbing state
         absorbing_dim = np.zeros(len(dataset["observations"]))
         _observations = np.concatenate((dataset["observations"], absorbing_dim[:, np.newaxis]), axis=1)
@@ -313,9 +329,11 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
         observations = np.array([])
         next_observations = np.array([])
         actions = np.array([])
+        rewards = np.array([])
+        costs = np.array([])
         s = 0
         term = np.append(terminal_indexes, np.array(b - 1)) # add the last terminal index
-        for t in tqdm(term):
+        for t in tqdm(term[1:]):
             # observations
             obs_tmp = np.vstack((_observations[s : t + 1], _next_observations[t], absorbing_state))
             obs_tmp[-1, -1] = 1
@@ -327,55 +345,43 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
             # actions
             a_tmp = np.vstack((dataset["actions"][s:t+1], absorbing_action, absorbing_action))
             actions = np.append(actions, a_tmp)
+            # rewards
+            r_tmp = np.append(pure_rewards[s:t+1], np.zeros(2))
+            rewards = np.append(rewards, r_tmp)
+            # costs
+            c_tmp = np.append(affine_costs[s:t+1], np.zeros(2) + 0.001)
+            costs = np.append(costs, c_tmp)
+            rewards
             s = t + 1
 
         observations = observations.reshape(-1, o_d)
         next_observations = next_observations.reshape(-1, o_d)
         actions = actions.reshape(-1, a_d)
+        rewards = rewards.reshape(-1)
+        costs = costs.reshape(-1)
 
+        observations = np.vstack((observations, next_observations[-1], absorbing_state))
+        next_observations = np.vstack((next_observations, absorbing_state, absorbing_state))
+        actions = np.vstack((actions, absorbing_action, absorbing_action))
+        rewards = np.concatenate((rewards, np.zeros(2)))
+        costs = np.concatenate((costs, np.zeros(2) + 0.001))
+        
         assert observations.shape == next_observations.shape
         assert len(absorbing_action) == len(actions[0])
 
-        # cost assignment
-        if cost_type == "max":
-            costs = np.max(abs(dataset['actions']), axis=1) + eps
-        elif cost_type == "avg":
-            costs = np.mean(abs(dataset['actions']), axis=1) + eps
-        elif cost_type == "min":
-            costs = np.min(abs(dataset["actions"]), axis=1) + eps
-        elif cost_type == "ctrl":
-            costs = np.sum(dataset["actions"]**2, axis=1)
-        else:
-            raise NotImplementedError
-
-        # add ctrl_cost
-        if "half" in env_name:
-            ctrl_cost_weight = 0.1
-            healty_reward = 0.0
-        else:  # hopper, walker2d
-            ctrl_cost_weight = 0.001
-            healty_reward = 1.0
-        ctrl_cost = ctrl_cost_weight * costs
-        pure_rewards = dataset["rewards"] - healty_reward + ctrl_cost  # forward_reward
-
-        # set cost func
-        costs = cost_weight * costs + cost_lb
-
-        # for absorbing state
-        for _ in range(2):
-            rewards = np.insert(pure_rewards, terminal_indexes+1, 0.0, axis=0)
-            costs = np.insert(costs, terminal_indexes+1, 0.001, axis=0)
-        rewards = np.concatenate((rewards, np.zeros(2)))
-        costs = np.concatenate((costs, np.zeros(2) + 0.001))
+        # no terminate
+        dones_float = np.zeros_like(rewards)
+        
+        assert len(rewards) == len(costs) == len(observations) == len(actions)
 
         super().__init__(
             observations=observations.astype(np.float32),
             actions=actions.astype(np.float32),
             rewards=rewards.astype(np.float32),
-            masks=1.0 - dones_float.astype(np.float32),
-            dones_float=dones_float.astype(np.float32),
+            masks=1.0 - dones_float.astype(np.float32), # never used
+            dones_float=dones_float.astype(np.float32), # never used
             next_observations=next_observations.astype(np.float32),
-            timesteps=timesteps,
+            timesteps=timesteps, # never used
             initial_observations=initial_observations.astype(np.float32),
             size=len(observations),
             costs=costs,
