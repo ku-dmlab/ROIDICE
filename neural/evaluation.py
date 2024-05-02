@@ -46,6 +46,7 @@ def evaluate(
         cumulated_discount = 1
         cnt = 0
         while not done:
+            observation = np.append(observation, 0) # add absorbing dim
             action = agent.sample_actions(observation, temperature=0.0)
             if np.isnan(action).any():
                 print(f"\nep: {i}, action: {action}")

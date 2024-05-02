@@ -185,7 +185,7 @@ def main(_):
 
     agent = Learner(
         FLAGS.seed,
-        env.observation_space.sample()[np.newaxis],
+        np.append(env.observation_space.sample(), 0)[np.newaxis],
         env.action_space.sample()[np.newaxis],
         max_steps=FLAGS.max_steps,
         ckpt_dir=ckpt_dir,
@@ -213,7 +213,7 @@ def main(_):
             f"SEED{FLAGS.seed}",
         ],
         config=kwargs,
-        mode="online",
+        mode="offline",
     )
 
     log = Log(Path("benchmark") / env_name, kwargs)
@@ -226,12 +226,13 @@ def main(_):
             batch, unnormalized_return = dataset.sample(FLAGS.batch_size)
             update_info = agent.update(batch)
 
+            # debug
+            # tqdm.write(f"===i: {i}\n" + str(update_info))
+
             if i % FLAGS.log_interval == 0:
                 wandb.log(update_info, i)
 
             if i % FLAGS.eval_interval == 0:
-                # debug
-                # tqdm.write(f"===i: {i}\n" + str(update_info))
 
                 # logging args
                 logging_kwargs = {

@@ -298,10 +298,10 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
         # Extract initial observations.
         (terminal_indexes,) = np.where(dones_float == 1.0)  # noqa: E712
         terminal_indexes = np.insert(terminal_indexes, 0, -1)[:-1]
-        initial_observations = dataset["observations"][terminal_indexes + 1]  # type: ignore
+        # initial_observations = dataset["observations"][terminal_indexes + 1]  # type: ignore
 
         # cost assignment
-        costs = np.sum(dataset["actions"]**2, axis=1)
+        costs = np.sum(dataset["actions"] ** 2, axis=1)
 
         # add ctrl_cost
         if "half" in env_name:
@@ -318,12 +318,17 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
 
         # absorbing state
         absorbing_dim = np.zeros(len(dataset["observations"]))
-        _observations = np.concatenate((dataset["observations"], absorbing_dim[:, np.newaxis]), axis=1)
+        _observations = np.concatenate(
+            (dataset["observations"], absorbing_dim[:, np.newaxis]), axis=1
+        )
         _next_observations = np.concatenate(
             (dataset["next_observations"], absorbing_dim[:, np.newaxis]), axis=1
         )
+
+        initial_observations = _observations[terminal_indexes + 1]  # type: ignore
+
         absorbing_state = np.zeros(len(_observations[0]))
-        absorbing_action = np.zeros(len(dataset['actions'][0]))
+        absorbing_action = np.zeros(len(dataset["actions"][0]))
         b, o_d = _observations.shape
         _, a_d = dataset["actions"].shape
         observations = np.array([])
@@ -332,56 +337,59 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
         rewards = np.array([])
         costs = np.array([])
         s = 0
-        term = np.append(terminal_indexes, np.array(b - 1)) # add the last terminal index
+        term = np.append(terminal_indexes, np.array(b - 1))  # add the last terminal index
+        dones = np.array([])
         for t in tqdm(term[1:]):
             # observations
             obs_tmp = np.vstack((_observations[s : t + 1], _next_observations[t], absorbing_state))
             obs_tmp[-1, -1] = 1
             observations = np.append(observations, obs_tmp)
             # next observations
-            next_obs_tmp = np.vstack((_next_observations[s : t + 1], absorbing_state, absorbing_state))
+            next_obs_tmp = np.vstack(
+                (_next_observations[s : t + 1], absorbing_state, absorbing_state)
+            )
             next_obs_tmp[-2:, -1] = 1
             next_observations = np.append(next_observations, next_obs_tmp)
             # actions
-            a_tmp = np.vstack((dataset["actions"][s:t+1], absorbing_action, absorbing_action))
+            a_tmp = np.vstack((dataset["actions"][s : t + 1], absorbing_action, absorbing_action))
             actions = np.append(actions, a_tmp)
             # rewards
-            r_tmp = np.append(pure_rewards[s:t+1], np.zeros(2))
+            r_tmp = np.append(pure_rewards[s : t + 1], np.zeros(2))
             rewards = np.append(rewards, r_tmp)
             # costs
-            c_tmp = np.append(affine_costs[s:t+1], np.zeros(2) + 0.001)
+            c_tmp = np.append(affine_costs[s : t + 1], np.zeros(2) + 0.001)
             costs = np.append(costs, c_tmp)
-            rewards
+            # donse_float
+            d_tmp = np.append(np.zeros_like(dones_float[s : t + 1]), np.array([0.0, 1.0]))
+            dones = np.append(dones, d_tmp)
             s = t + 1
-
+            
         observations = observations.reshape(-1, o_d)
         next_observations = next_observations.reshape(-1, o_d)
         actions = actions.reshape(-1, a_d)
         rewards = rewards.reshape(-1)
         costs = costs.reshape(-1)
+        dones = dones.reshape(-1)
 
+        # for the last episode
         observations = np.vstack((observations, next_observations[-1], absorbing_state))
         next_observations = np.vstack((next_observations, absorbing_state, absorbing_state))
         actions = np.vstack((actions, absorbing_action, absorbing_action))
         rewards = np.concatenate((rewards, np.zeros(2)))
         costs = np.concatenate((costs, np.zeros(2) + 0.001))
-        
-        assert observations.shape == next_observations.shape
-        assert len(absorbing_action) == len(actions[0])
+        dones = np.concatenate((dones, np.array([0.0, 1.0])))
 
-        # no terminate
-        dones_float = np.zeros_like(rewards)
-        
+        assert observations.shape == next_observations.shape
         assert len(rewards) == len(costs) == len(observations) == len(actions)
 
         super().__init__(
             observations=observations.astype(np.float32),
             actions=actions.astype(np.float32),
             rewards=rewards.astype(np.float32),
-            masks=1.0 - dones_float.astype(np.float32), # never used
-            dones_float=dones_float.astype(np.float32), # never used
+            masks=1.0 - dones.astype(np.float32),  # never used
+            dones_float=dones.astype(np.float32),
             next_observations=next_observations.astype(np.float32),
-            timesteps=timesteps, # never used
+            timesteps=np.zeros_like(dones),  # never used
             initial_observations=initial_observations.astype(np.float32),
             size=len(observations),
             costs=costs,
