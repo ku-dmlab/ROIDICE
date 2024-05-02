@@ -213,7 +213,7 @@ def main(_):
             f"SEED{FLAGS.seed}",
         ],
         config=kwargs,
-        mode="offline",
+        mode="online",
     )
 
     log = Log(Path("benchmark") / env_name, kwargs)
@@ -233,11 +233,13 @@ def main(_):
                 wandb.log(update_info, i)
 
             if i % FLAGS.eval_interval == 0:
-
                 # logging args
                 logging_kwargs = {
                     "logging_video": FLAGS.log_video and (i % FLAGS.eval_video_interval == 0),
-                    "logging_path": os.path.join(FLAGS.save_dir, f"{env_name}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/log{i}"),
+                    "logging_path": os.path.join(
+                        FLAGS.save_dir,
+                        f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/log{i}",
+                    ),
                 }
 
                 (
