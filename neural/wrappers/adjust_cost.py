@@ -35,6 +35,18 @@ class ActionRelevantCost(gym.Wrapper):
         info['cost'] = self._cost_weight * info['cost'] + self._cost_lb
         
         return obs, pure_rewards, done, info
+    
+class TradeFeeCost(gym.Wrapper):
+    def __init__(self, env, env_name):
+        super().__init__(env)
+        self._env_name = env_name
+    
+    def step(self, action):
+        obs, rewards, done, info = super().step(action)
+
+        info['cost'] = self.env.cost
+
+        return obs, rewards, done, info
 
 class CostLowerBound(gym.Wrapper):
     def __init__(self, env, eps=1e-5):

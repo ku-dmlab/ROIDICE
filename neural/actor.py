@@ -2,6 +2,7 @@ import typing
 from typing import Tuple
 
 from jax import Array
+from jax import numpy as jnp
 
 import divergence
 from common import ConstrainedBatch, InfoDict, Model, Params, PRNGKey
@@ -15,11 +16,13 @@ def update_weighted_bc(
     batch: ConstrainedBatch,
     actor: Model,
     nu_state: Model,
+    critic: Model,
     cost_lambda: Model,
     alpha: float,
     discount: float,
     f_divergence: FDivergence,
     rng: PRNGKey,
+    ub: bool = False,
 ):
     nu = nu_state(batch.observations)
     next_nu = nu_state(batch.next_observations)
@@ -29,16 +32,25 @@ def update_weighted_bc(
     else:
         cost_coeff = cost_lambda()
 
-    state_action_ratio = divergence.state_action_ratio(
-        nu,
-        next_nu,
-        batch.rewards,
-        batch.costs,
-        alpha,
-        cost_coeff,
-        discount,
-        f_divergence,
-    )
+    if critic is not None:
+        q1, q2 = critic(batch.observations, batch.actions)
+        q = jnp.minimum(q1, q2)
+
+    if ub:
+        state_action_ratio = divergence.state_action_ratio_q(
+            nu, batch.costs, q, alpha, cost_coeff, f_divergence
+        )
+    else:
+        state_action_ratio = divergence.state_action_ratio(
+            nu,
+            next_nu,
+            batch.rewards,
+            batch.costs,
+            alpha,
+            cost_coeff,
+            discount,
+            f_divergence,
+        )
 
     def actor_loss_fn(actor_params: Params) -> Tuple[Array, InfoDict]:
         dist: Distribution = actor.apply(
@@ -54,16 +66,19 @@ def update_weighted_bc(
     new_actor, info = actor.apply_gradient(actor_loss_fn)
     return new_actor, info
 
+
 def update_weighted_bc_cct(
     batch: ConstrainedBatch,
     actor: Model,
     nu_state: Model,
     cost_mu: Model,
     cost_t: Model,
+    critic: Model,
     alpha: float,
     discount: float,
     f_divergence: FDivergence,
     rng: PRNGKey,
+    ub: bool = False,
 ):
     nu = nu_state(batch.observations)
     next_nu = nu_state(batch.next_observations)
@@ -71,18 +86,27 @@ def update_weighted_bc_cct(
     mu = cost_mu()
     t = cost_t()
 
-    state_action_ratio = divergence.state_action_ratio(
-        nu,
-        next_nu,
-        batch.rewards,
-        batch.costs,
-        alpha,
-        None,
-        discount,
-        f_divergence,
-        mu=mu,
-        t=t,
-    )
+    if critic is not None:
+        q1, q2 = critic(batch.observations, batch.actions)
+        q = jnp.minimum(q1, q2)
+
+    if ub:
+        state_action_ratio = divergence.state_action_ratio_q(
+            nu, batch.costs, q, alpha, 0, f_divergence, mu, t
+        )
+    else:
+        state_action_ratio = divergence.state_action_ratio(
+            nu,
+            next_nu,
+            batch.rewards,
+            batch.costs,
+            alpha,
+            0,
+            discount,
+            f_divergence,
+            mu=mu,
+            t=t,
+        )
 
     def actor_loss_fn(actor_params: Params) -> Tuple[Array, InfoDict]:
         dist: Distribution = actor.apply(
@@ -97,6 +121,7 @@ def update_weighted_bc_cct(
 
     new_actor, info = actor.apply_gradient(actor_loss_fn)
     return new_actor, info
+
 
 def update_bc(
     batch: ConstrainedBatch,

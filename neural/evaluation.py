@@ -45,7 +45,8 @@ def evaluate(
         discounted_total_cost = 0.0
         cumulated_discount = 1
         cnt = 0
-        while not done:
+        # while not done:
+        while cnt < max_step:
             observation = np.append(observation, 0) # add absorbing dim
             action = agent.sample_actions(observation, temperature=0.0)
             if np.isnan(action).any():

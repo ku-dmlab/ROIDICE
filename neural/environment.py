@@ -42,10 +42,15 @@ class Car(str, Enum):
     BUTTON = "Safexp-CarButton1-v0"
     PUSH = "Safexp-CarPush1-v0"
 
+class FinRL(str, Enum):
+    LOW = "finance-low-100"
+    MEDIUM = "finance-medium-100"
+    HIGH = "finance-high-100"
 
+NeoRLEnvironmentName = FinRL
 GymEnvironmentName = Hopper | Halfcheetah | Walker2D
 SafetyGymEnvironmentName = Point | Car
-EnvironmentName = AntMaze | GymEnvironmentName | SafetyGymEnvironmentName
+EnvironmentName = AntMaze | GymEnvironmentName | SafetyGymEnvironmentName | NeoRLEnvironmentName
 
 
 def parse_string(name: str) -> EnvironmentName:
@@ -60,5 +65,7 @@ def parse_string(name: str) -> EnvironmentName:
             return Point(name)
         case ["Safexp", env_name, _] if env_name.startswith("Car"):
             return Car(name)
+        case ["finance", *_]:
+            return FinRL(name)
         case _:
             raise ValueError(f"{name} is not supported.")

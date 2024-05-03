@@ -2,12 +2,14 @@ from enum import Enum
 
 class OptiDICE(str, Enum):
     DEFAULT = "OptiDICE"
+    UB = "UBOptiDICE"
 
 class COptiDICE(str, Enum):
     DEFAULT = "COptiDICE"
 
 class ROIDICE(str, Enum):
     DEFAULT = "ROIDICE"
+    UB = "UBROIDICE"
 
 class BC(str, Enum):
     DEFAULT = "BC"

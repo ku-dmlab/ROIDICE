@@ -118,9 +118,7 @@ def f_conjugate(y: ArrayLike, f_divergence: FDivergence) -> Array:
             # When y becomes too large so that jnp.exp(y) becomes inf, even if jnp.exp(y) is
             # not actually called, it will cause problem. To avoid this, we use jnp.where twice.
             # Ref.: https://github.com/tensorflow/probability/blob/main/discussion/where-nan.pdf
-            return jnp.where(
-                y >= 0.0, y**2 / 2 + y, jnp.exp(jnp.where(y < 0.0, y, 0.0)) - 1
-            )
+            return jnp.where(y >= 0.0, y**2 / 2 + y, jnp.exp(jnp.where(y < 0.0, y, 0.0)) - 1)
         case FDivergence.DUAL_DICE:
             return jnp.abs(y) ** 3 / 3
         case FDivergence.SOFT_CHI_T:
@@ -129,9 +127,7 @@ def f_conjugate(y: ArrayLike, f_divergence: FDivergence) -> Array:
             assert_never(f_divergence)
 
 
-def policy_ratio(
-    q: ArrayLike, value: ArrayLike, alpha: float, f_divergence: FDivergence
-) -> Array:
+def policy_ratio(q: ArrayLike, value: ArrayLike, alpha: float, f_divergence: FDivergence) -> Array:
     """Compute the policy ratio.
 
     Args:
@@ -161,9 +157,7 @@ def policy_ratio(
             # Ref.: https://github.com/tensorflow/probability/blob/main/discussion/where-nan.pdf
             return jnp.where(x > 0, x + 1, jnp.exp(jnp.where(x <= 0.0, x, 0.0)))
         case FDivergence.KL | FDivergence.DUAL_DICE | FDivergence.SOFT_CHI_T:
-            raise NotImplementedError(
-                f"This funtion isn't implemented for {f_divergence}."
-            )
+            raise NotImplementedError(f"This funtion isn't implemented for {f_divergence}.")
         case _:
             assert_never(f_divergence)
 
@@ -215,9 +209,7 @@ def state_ratio(
                 jnp.exp(jnp.where(advantage <= 0.0, advantage, 0.0)),
             )
         case FDivergence.KL | FDivergence.DUAL_DICE | FDivergence.SOFT_CHI_T:
-            raise NotImplementedError(
-                f"This funtion isn't implemented for {f_divergence}."
-            )
+            raise NotImplementedError(f"This funtion isn't implemented for {f_divergence}.")
         case _:
             assert_never(f_divergence)
 
@@ -234,9 +226,7 @@ def state_ratio_jvp(
     nu, next_nu = primals
     tangent_nu, tangent_next_nu = tangents
 
-    primal_out = state_ratio(
-        advantage, policy_ratio, f_divergence, discount, nu, next_nu
-    )
+    primal_out = state_ratio(advantage, policy_ratio, f_divergence, discount, nu, next_nu)
 
     match f_divergence:
         case FDivergence.CHI:
@@ -259,9 +249,7 @@ def state_ratio_jvp(
                 * (discount * tangent_next_nu - tangent_nu)
             )
         case FDivergence.KL | FDivergence.DUAL_DICE | FDivergence.SOFT_CHI_T:
-            raise NotImplementedError(
-                f"This function is not implemented for {f_divergence}."
-            )
+            raise NotImplementedError(f"This function is not implemented for {f_divergence}.")
         case _:
             assert_never(f_divergence)
     return primal_out, tangent_out
@@ -273,10 +261,10 @@ def state_action_ratio(
     rewards: ArrayLike,
     costs: ArrayLike,
     alpha: float,
-    cost_coeff: float | ArrayLike,
+    cost_coeff: float,
     discount: float,
     f_divergence: FDivergence,
-    mu: float = 1.0,
+    mu: float = 0.0,
     t: float = 1.0,
 ) -> Array:
     if not isinstance(nu, ArrayLike):
@@ -293,9 +281,38 @@ def state_action_ratio(
     rewards = jnp.array(rewards)
     costs = jnp.array(costs)
 
-    if cost_coeff is not None:
+    if cost_coeff != 0:
         e = rewards - cost_coeff * costs + discount * next_nu - nu
         return jax.nn.relu(f_derivative_inverse(e / alpha, f_divergence))
     else:
         e = rewards + discount * next_nu - nu
+        return jax.nn.relu(f_derivative_inverse((e - mu * costs) / alpha, f_divergence, t=t))
+
+
+def state_action_ratio_q(
+    nu: ArrayLike,
+    costs: ArrayLike,
+    q: ArrayLike,
+    alpha: float,
+    cost_coeff: float | ArrayLike,
+    f_divergence: FDivergence,
+    mu: float = 0.0,
+    t: float = 1.0,
+) -> Array:
+    if not isinstance(nu, ArrayLike):
+        raise TypeError(f"Expected arraylike input; got {nu}")
+    if not isinstance(q, ArrayLike):
+        raise TypeError(f"Expected arraylike input; got {q}")
+    if not isinstance(costs, ArrayLike):
+        raise TypeError(f"Expected arraylike input; got {costs}")
+    
+    nu = jnp.array(nu)
+    costs = jnp.array(costs)
+    q = jnp.array(q)
+
+    if cost_coeff != 0:
+        e = q - nu - cost_coeff * costs
+        return jax.nn.relu(f_derivative_inverse(e / alpha, f_divergence))
+    else:
+        e = q - nu
         return jax.nn.relu(f_derivative_inverse((e - mu * costs) / alpha, f_divergence, t=t))

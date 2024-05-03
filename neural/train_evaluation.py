@@ -7,7 +7,9 @@ from typing import Tuple
 import d4rl  # noqa: F401
 import gym
 import numpy as np
-import safety_gym  # noqa: F401
+import neorl
+
+# import safety_gym  # noqa: F401
 from absl import app, flags
 from ml_collections import config_flags
 from tqdm import tqdm
@@ -23,9 +25,15 @@ from dataset_utils import (
     Log,
     SafetyGymDataset,
     split_into_trajectories,
+    ConstrainedNeoRLDataset,   
 )
 from divergence import FDivergence
-from environment import EnvironmentName, SafetyGymEnvironmentName, GymEnvironmentName
+from environment import (
+    EnvironmentName,
+    SafetyGymEnvironmentName,
+    GymEnvironmentName,
+    NeoRLEnvironmentName,
+)
 from evaluation import evaluate
 from learner import Learner
 
@@ -38,7 +46,7 @@ flags.DEFINE_enum("divergence", "Chi", FDivergence, None)
 flags.DEFINE_integer("seed", 42, "Random seed.")
 flags.DEFINE_integer("eval_episodes", 10, "Number of episodes used for evaluation.")
 flags.DEFINE_integer("log_interval", 1000, "Logging interval.")
-flags.DEFINE_integer("eval_interval", 10000, "Eval interval.")
+flags.DEFINE_integer("eval_interval", 1000, "Eval interval.")
 flags.DEFINE_boolean("log_video", False, "Whether log eval video.")
 flags.DEFINE_integer("eval_video_interval", 10000, "Eval video interval.")
 flags.DEFINE_integer("batch_size", 256, "Mini batch size.")
@@ -98,7 +106,11 @@ def normalize(dataset):
 def make_env_and_dataset(
     env_name: EnvironmentName, seed: int
 ) -> Tuple[gym.Env, D4RLDataset | SafetyGymDataset]:
-    env = gym.make(env_name)
+    if isinstance(env_name, NeoRLEnvironmentName):
+        name, _, _ = env_name.split("-")
+        env = neorl.make(name)
+    else:
+        env = gym.make(env_name)
 
     env = wrappers.EpisodeMonitor(env)
     env = wrappers.SinglePrecision(env)
@@ -108,6 +120,8 @@ def make_env_and_dataset(
         env = wrappers.ActionRelevantCost(
             env, env_name, FLAGS.cost_type, FLAGS.cost_weight, FLAGS.cost_lb
         )
+    elif isinstance(env_name, NeoRLEnvironmentName):
+        env = wrappers.TradeFeeCost(env, env_name)
 
     env.seed(seed)
     env.action_space.seed(seed)
@@ -140,6 +154,8 @@ def make_env_and_dataset(
         dataset = ConstrainedD4RLDataset(
             env, env_name, FLAGS.cost_type, FLAGS.cost_weight, FLAGS.cost_lb
         )
+    elif isinstance(env_name, NeoRLEnvironmentName):
+        dataset = ConstrainedNeoRLDataset(env, env_name)
     else:
         raise NotImplementedError
 
