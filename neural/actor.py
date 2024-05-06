@@ -77,7 +77,7 @@ def update_weighted_bc_cct(
         batch.rewards,
         batch.costs,
         alpha,
-        None,
+        0,
         discount,
         f_divergence,
         mu=mu,

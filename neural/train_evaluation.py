@@ -28,6 +28,7 @@ from divergence import FDivergence
 from environment import EnvironmentName, SafetyGymEnvironmentName, GymEnvironmentName
 from evaluation import evaluate
 from learner import Learner
+from recording_video import recorde_video
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string("proj_name", "debug", "Project name.")
@@ -38,9 +39,10 @@ flags.DEFINE_enum("divergence", "Chi", FDivergence, None)
 flags.DEFINE_integer("seed", 42, "Random seed.")
 flags.DEFINE_integer("eval_episodes", 10, "Number of episodes used for evaluation.")
 flags.DEFINE_integer("log_interval", 1000, "Logging interval.")
-flags.DEFINE_integer("eval_interval", 10000, "Eval interval.")
+flags.DEFINE_integer("eval_interval", 1000, "Eval interval.")
 flags.DEFINE_boolean("log_video", False, "Whether log eval video.")
-flags.DEFINE_integer("eval_video_interval", 10000, "Eval video interval.")
+flags.DEFINE_integer("video_interval", 10000, "Video interval.")
+flags.DEFINE_integer("video_steps", 2000, "Run steps for video recording.")
 flags.DEFINE_integer("batch_size", 256, "Mini batch size.")
 flags.DEFINE_integer("max_steps", int(1e6), "Number of training steps.")
 flags.DEFINE_string("mix_dataset", "None", "mix the dataset")
@@ -48,7 +50,7 @@ flags.DEFINE_boolean("tqdm", True, "Use tqdm progress bar.")
 flags.DEFINE_float("alpha", 1.0, "temperature")
 flags.DEFINE_float("lr_ratio", 0.01, None)
 flags.DEFINE_float("gradient_penalty_coeff", 1e-5, None)
-flags.DEFINE_float("cost_ub", 0.01, None)
+flags.DEFINE_float("cost_ub", 100, None)
 flags.DEFINE_float("initial_lambda", 1.0, None)
 flags.DEFINE_string("ckpt_dir", None, None, required=False)
 flags.DEFINE_string("eval_ckpt_dir", None, None, required=False)
@@ -211,6 +213,7 @@ def main(_):
             FLAGS.divergence,
             f"ALPHA{FLAGS.alpha}",
             f"SEED{FLAGS.seed}",
+            f"COST_UB{FLAGS.cost_ub}",
         ],
         config=kwargs,
         mode="online",
@@ -233,15 +236,6 @@ def main(_):
                 wandb.log(update_info, i)
 
             if i % FLAGS.eval_interval == 0:
-                # logging args
-                logging_kwargs = {
-                    "logging_video": FLAGS.log_video and (i % FLAGS.eval_video_interval == 0),
-                    "logging_path": os.path.join(
-                        FLAGS.save_dir,
-                        f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/log{i}",
-                    ),
-                }
-
                 (
                     normalized_return,
                     discounted_return,
@@ -249,20 +243,8 @@ def main(_):
                     average_discounted_cost,
                     undiscounted_roi,
                     discounted_roi,
-                ) = evaluate(env_name, agent, env, FLAGS.eval_episodes, **logging_kwargs)
+                ) = evaluate(env_name, agent, env, FLAGS.eval_episodes)
 
-                # tqdm.write(
-                #     str(
-                #         {
-                #             "average_return": normalized_return,
-                #             "discounted_return": discounted_return,
-                #             "undiscounted_cost": undiscounted_cost,
-                #             "discounted_cost": average_discounted_cost,
-                #             "undiscounted_roi": undiscounted_roi,
-                #             "discounted_roi": discounted_roi,
-                #         }
-                #     )
-                # )
                 wandb.log(
                     {
                         "average_return": normalized_return,
@@ -274,6 +256,14 @@ def main(_):
                     },
                     i - 1,
                 )
+            
+            if i == 1 or FLAGS.log_video and i % FLAGS.video_interval == 0:
+                # logging args
+                logging_path = os.path.join(
+                        FLAGS.save_dir,
+                        f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/log{i}",
+                    )
+                recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 
         # agent.save_ckpt(i)
     else:
@@ -281,13 +271,6 @@ def main(_):
         log(f"Loaded checkpoints from {FLAGS.ckpt_dir}")
 
     # Off-policy evaluation
-    logging_kwargs = {
-        "logging_video": FLAGS.log_video,
-        "logging_path": os.path.join(
-            FLAGS.save_dir,
-            f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/ope/",
-        ),
-    }
     (
         normalized_return,
         average_discounted_return,
@@ -295,7 +278,15 @@ def main(_):
         average_discounted_cost,
         undiscounted_roi,
         discounted_roi,
-    ) = evaluate(env_name, agent, env, FLAGS.eval_episodes, **logging_kwargs)
+    ) = evaluate(env_name, agent, env, FLAGS.eval_episodes)
+
+    # logging args
+    if FLAGS.log_video:
+        logging_path = os.path.join(
+                FLAGS.save_dir,
+                f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/ope/",
+            )
+        recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 
     # logging
     tqdm.write(

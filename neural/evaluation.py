@@ -5,9 +5,6 @@ import d4rl
 import gym
 import numpy as np
 
-import wandb
-from PIL import Image
-
 from environment import EnvironmentName
 
 if typing.TYPE_CHECKING:
@@ -21,12 +18,7 @@ def evaluate(
     num_episodes: int,
     discount: float = 0.99,
     max_step: int = 1000,
-    logging_video: bool = False,
-    logging_path: str = "./results/neural/",
 ) -> tuple[float, float, float, float]:
-    if logging_video:
-        os.makedirs(logging_path, exist_ok=True)
-
     # stats = {'return': [], 'length': []}
     total_cost_ = []
     total_reward_ = []
@@ -34,7 +26,6 @@ def evaluate(
     discounted_total_cost_ = []
     discounted_total_reward_ = []
     discounted_total_roi_ = []
-    frames = []
     for i in range(num_episodes):
         observation: np.ndarray = env.reset()  # type: ignore
         done = False
@@ -45,7 +36,7 @@ def evaluate(
         discounted_total_cost = 0.0
         cumulated_discount = 1
         cnt = 0
-        while not done:
+        while not done and cnt < max_step:
             observation = np.append(observation, 0) # add absorbing dim
             action = agent.sample_actions(observation, temperature=0.0)
             if np.isnan(action).any():
@@ -57,14 +48,6 @@ def evaluate(
             total_cost += info["cost"]
             discounted_total_cost += cumulated_discount * info["cost"]
             cumulated_discount *= discount
-            if logging_video and i == 0:
-                # the first episode
-                frame = env.render('rgb_array').astype(np.uint8)
-                frames.append(frame)
-                # save
-                frame = Image.fromarray(frame)
-                frame.save(os.path.join(logging_path, f"step{cnt:04d}.png"))
-
             cnt += 1
 
         # compute roi = r / c
@@ -93,11 +76,6 @@ def evaluate(
 
     average_undiscounted_roi = np.array(total_roi_).mean()
     average_discounted_roi = np.array(discounted_total_roi_).mean()
-
-    # logging video
-    if logging_video:
-        frames = np.transpose(np.array(frames), (0, 3, 1, 2)) # (t, c, h, w)
-        wandb.log({f"video/{env_name}": wandb.Video(frames, fps=8)})
 
     return (
         average_return,

@@ -22,8 +22,10 @@ def update_nu_state(
 ):
     if cost_lambda is None:
         cost_coeff = 0  # unconstrained
+        costs = jnp.zeros_like(batch.costs)
     else:
         cost_coeff = cost_lambda()
+        costs = batch.costs
 
     @partial(jax.vmap, in_axes=(None, 0))
     @partial(jax.grad, argnums=1)
@@ -34,13 +36,13 @@ def update_nu_state(
         initial_nu = nu_state.apply({"params": params}, batch.initial_observations)
         nu = nu_state.apply({"params": params}, batch.observations)
         next_nu = nu_state.apply({"params": params}, batch.next_observations)
-        e = batch.rewards - cost_coeff * batch.costs + discount * next_nu - nu
+        e = batch.rewards - cost_coeff * costs + discount * next_nu - nu
 
         state_action_ratio = divergence.state_action_ratio(
             nu,
             next_nu,
             batch.rewards,
-            batch.costs,
+            costs,
             alpha,
             cost_coeff,
             discount,
@@ -118,7 +120,7 @@ def update_nu_state_cct(
             batch.rewards,
             batch.costs,
             alpha,
-            None,
+            0,
             discount,
             f_divergence,
             mu=mu,
