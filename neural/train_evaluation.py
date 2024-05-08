@@ -35,6 +35,7 @@ from environment import (
     NeoRLEnvironmentName,
 )
 from evaluation import evaluate
+from recording_video import recorde_video
 from learner import Learner
 
 FLAGS = flags.FLAGS
@@ -48,7 +49,8 @@ flags.DEFINE_integer("eval_episodes", 10, "Number of episodes used for evaluatio
 flags.DEFINE_integer("log_interval", 1000, "Logging interval.")
 flags.DEFINE_integer("eval_interval", 1000, "Eval interval.")
 flags.DEFINE_boolean("log_video", False, "Whether log eval video.")
-flags.DEFINE_integer("eval_video_interval", 10000, "Eval video interval.")
+flags.DEFINE_integer("video_interval", 10000, "Video interval.")
+flags.DEFINE_integer("video_steps", 2000, "Run steps for video recording.")
 flags.DEFINE_integer("batch_size", 256, "Mini batch size.")
 flags.DEFINE_integer("max_steps", int(1e6), "Number of training steps.")
 flags.DEFINE_string("mix_dataset", "None", "mix the dataset")
@@ -66,7 +68,7 @@ flags.DEFINE_string(
 flags.DEFINE_float("cost_weight", 1.0, "Weight of cost.")
 flags.DEFINE_float("cost_lb", 0.1, "Lower bound of cost.")
 
-flags.DEFINE_string("entity", "hy-kiera", "wandb log entity.")
+flags.DEFINE_string("entity", "hy-dmlab", "wandb log entity.")
 
 config_flags.DEFINE_config_file(
     "config",
@@ -249,15 +251,6 @@ def main(_):
                 wandb.log(update_info, i)
 
             if i % FLAGS.eval_interval == 0:
-                # logging args
-                logging_kwargs = {
-                    "logging_video": FLAGS.log_video and (i % FLAGS.eval_video_interval == 0),
-                    "logging_path": os.path.join(
-                        FLAGS.save_dir,
-                        f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/log{i}",
-                    ),
-                }
-
                 (
                     normalized_return,
                     discounted_return,
@@ -265,20 +258,8 @@ def main(_):
                     average_discounted_cost,
                     undiscounted_roi,
                     discounted_roi,
-                ) = evaluate(env_name, agent, env, FLAGS.eval_episodes, **logging_kwargs)
+                ) = evaluate(env_name, agent, env, FLAGS.eval_episodes)
 
-                # tqdm.write(
-                #     str(
-                #         {
-                #             "average_return": normalized_return,
-                #             "discounted_return": discounted_return,
-                #             "undiscounted_cost": undiscounted_cost,
-                #             "discounted_cost": average_discounted_cost,
-                #             "undiscounted_roi": undiscounted_roi,
-                #             "discounted_roi": discounted_roi,
-                #         }
-                #     )
-                # )
                 wandb.log(
                     {
                         "average_return": normalized_return,
@@ -290,6 +271,15 @@ def main(_):
                     },
                     i - 1,
                 )
+            
+            if FLAGS.log_video and i % FLAGS.video_interval == 0:
+                # logging args
+                logging_path = os.path.join(
+                        FLAGS.save_dir,
+                        f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/log{i}",
+                    )
+                if not isinstance(env_name, NeoRLEnvironmentName):
+                    recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 
         # agent.save_ckpt(i)
     else:
@@ -297,13 +287,6 @@ def main(_):
         log(f"Loaded checkpoints from {FLAGS.ckpt_dir}")
 
     # Off-policy evaluation
-    logging_kwargs = {
-        "logging_video": FLAGS.log_video,
-        "logging_path": os.path.join(
-            FLAGS.save_dir,
-            f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/ope/",
-        ),
-    }
     (
         normalized_return,
         average_discounted_return,
@@ -311,7 +294,16 @@ def main(_):
         average_discounted_cost,
         undiscounted_roi,
         discounted_roi,
-    ) = evaluate(env_name, agent, env, FLAGS.eval_episodes, **logging_kwargs)
+    ) = evaluate(env_name, agent, env, FLAGS.eval_episodes)
+
+    # logging args
+    if FLAGS.log_video:
+        logging_path = os.path.join(
+                FLAGS.save_dir,
+                f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/ope/",
+            )
+        if not isinstance(env_name, NeoRLEnvironmentName):
+            recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 
     # logging
     tqdm.write(

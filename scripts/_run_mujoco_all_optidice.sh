@@ -7,7 +7,7 @@ GPU_ID="$1"
 ALG="OptiDICE"
 ENV="$2" #("hopper-medium-expert-v2" "halfcheetah-medium-expert-v2" "walker2d-medium-expert-v2")
 DIV="SoftChi"
-PROJ_NAME="roidice_absorbing_healthy"
+PROJ_NAME="roidice_absorbing_healthy_medium"
 
 EVAL_INTERVAL=100
 EVAL_EPISODES=10
