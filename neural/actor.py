@@ -2,6 +2,7 @@ import typing
 from typing import Tuple
 
 from jax import Array
+from jax import numpy as jnp
 
 import divergence
 from common import ConstrainedBatch, InfoDict, Model, Params, PRNGKey
@@ -26,14 +27,16 @@ def update_weighted_bc(
 
     if cost_lambda is None:
         cost_coeff = 0  # unconstrained
+        costs = jnp.zeros_like(batch.costs)
     else:
         cost_coeff = cost_lambda()
+        costs = batch.costs
 
     state_action_ratio = divergence.state_action_ratio(
         nu,
         next_nu,
         batch.rewards,
-        batch.costs,
+        costs,
         alpha,
         cost_coeff,
         discount,

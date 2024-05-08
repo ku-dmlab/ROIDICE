@@ -8,7 +8,7 @@ ALG="COptiDICE"
 ENV="$2" #("hopper-medium-expert-v2" "halfcheetah-medium-expert-v2" "walker2d-medium-expert-v2")
 DIV="SoftChi"
 COST_UB="$3" # (30 40 50) (250 300 350) (150 180 200)
-PROJ_NAME="coptidice_absorbing_healthy_medium_expert"
+PROJ_NAME="coptidice_absorbing_healthy_medium"
 
 EVAL_INTERVAL=100
 EVAL_EPISODES=10

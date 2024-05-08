@@ -293,7 +293,6 @@ def state_action_ratio(
     rewards = jnp.array(rewards)
     costs = jnp.array(costs)
 
-    # if cost_coeff != 0:
     if FDivergence(f_divergence) in ["SoftChi", "Chi"]:
         e = rewards - cost_coeff * costs + discount * next_nu - nu
         return jax.nn.relu(f_derivative_inverse(e / alpha, f_divergence))

@@ -60,7 +60,7 @@ flags.DEFINE_string(
 flags.DEFINE_float("cost_weight", 1.0, "Weight of cost.")
 flags.DEFINE_float("cost_lb", 0.1, "Lower bound of cost.")
 
-flags.DEFINE_string("entity", "hy-kiera", "wandb log entity.")
+flags.DEFINE_string("entity", "hy-dmlab", "wandb log entity.")
 
 config_flags.DEFINE_config_file(
     "config",
