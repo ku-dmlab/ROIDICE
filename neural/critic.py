@@ -168,6 +168,88 @@ def update_nu_state_cct(
     return new_nu_state, info
 
 
+def update_upper_bound(
+    batch: ConstrainedBatch,
+    nu_state: Model,
+    tau: Model,
+    chi_state: Model,
+    cost_lambda: Model,
+    cost_ub_epsilon: float,
+    alpha: float,
+    discount: float,
+    f_divergence: FDivergence,
+    rng: PRNGKey,
+):
+    cost_coeff = cost_lambda()
+    nu = nu_state(batch.observations)
+    next_nu = nu_state(batch.next_observations)
+
+    initial_chi = chi_state(batch.initial_observations)
+    chi = chi_state(batch.observations)
+    next_chi = chi_state(batch.next_observations)
+
+    batch_size = batch.observations.shape[0]
+
+    def tau_loss_fn(params: Params) -> Tuple[Array, InfoDict]:
+        dist_tau = tau.apply({"params": params})
+        state_action_ratio = divergence.state_action_ratio(
+            nu,
+            next_nu,
+            batch.rewards,
+            batch.costs,
+            alpha,
+            cost_coeff,
+            discount,
+            f_divergence,
+        )
+
+        ell = (1 - discount) * initial_chi + state_action_ratio * (
+            batch.costs + discount * batch.masks * next_chi - chi
+        )
+        logits = ell / dist_tau
+        weights = jax.nn.softmax(logits, axis=0) * batch_size
+        log_weights = jax.nn.log_softmax(logits, axis=0) + jnp.log(batch_size)
+        kl_divergence = (weights * log_weights - weights + 1).mean()
+
+        loss = dist_tau * (cost_ub_epsilon - kl_divergence)
+
+        return loss, {"loss/kl_divergence": kl_divergence, "loss/tau:": loss, "tau": dist_tau}
+
+    new_tau, info = tau.apply_gradient(tau_loss_fn)
+
+    dist_tau = tau()
+
+    def chi_state_loss_fn(params: Params) -> Tuple[Array, InfoDict]:
+        initial_chi = chi_state.apply({"params": params}, batch.initial_observations)
+        chi = chi_state.apply({"params": params}, batch.observations)
+        next_chi = chi_state.apply({"params": params}, batch.next_observations)
+
+        state_action_ratio = divergence.state_action_ratio(
+            nu,
+            next_nu,
+            batch.rewards,
+            batch.costs,
+            alpha,
+            cost_coeff,
+            discount,
+            f_divergence,
+        )
+
+        ell = (1 - discount) * initial_chi + state_action_ratio * (
+            batch.costs + discount * batch.masks * next_chi - chi
+        )
+        logits = ell / dist_tau
+        weights = jax.nn.softmax(logits, axis=0) * batch_size
+
+        loss = (weights * ell).mean()
+
+        return loss, {"loss/chi_state": loss}
+
+    new_chi_state, chi_state_info = chi_state.apply_gradient(chi_state_loss_fn)
+
+    return new_tau, new_chi_state, {**info, **chi_state_info}
+
+
 def update_w_state(
     batch: Batch,
     nu_state: Model,
@@ -236,6 +318,52 @@ def update_cost_lambda(
     new_cost_lambda, info = cost_lambda.apply_gradient(lambda_loss_fn)
     return new_cost_lambda, info
 
+def update_cost_lambda_ub(
+    batch: ConstrainedBatch,
+    cost_lambda: Model,
+    nu_state: Model,
+    chi_state: Model,
+    tau: Model,
+    alpha: float,
+    discount: float,
+    cost_limit: float,
+    f_divergence: FDivergence,
+):
+    nu = nu_state(batch.observations)
+    next_nu = nu_state(batch.next_observations)
+
+    initial_chi = chi_state(batch.initial_observations)
+    chi = chi_state(batch.observations)
+    next_chi = chi_state(batch.next_observations)
+
+    dist_tau = tau()
+
+    batch_size = batch.observations.shape[0]
+
+    def lambda_loss_fn(params: Params) -> tuple[Array, InfoDict]:
+        cost_coeff = cost_lambda.apply({"params": params})
+
+        e = batch.rewards - cost_coeff * batch.costs + discount * next_nu - nu
+        f_temp = divergence.f_derivative_inverse(e / alpha, f_divergence)
+        state_action_ratio = jax.nn.relu(f_temp)
+
+        ell = (1 - discount) * initial_chi + state_action_ratio * (
+            batch.costs + discount * batch.masks * next_chi - chi
+        )
+        logits = ell / dist_tau
+        weights = jax.nn.softmax(logits, axis=0) * batch_size
+
+        cost_estimate = (weights * state_action_ratio * batch.costs).mean()
+
+        loss = cost_coeff * (cost_limit - cost_estimate)
+        return loss, {
+            "loss/lambda": loss,
+            "cost/lambda": cost_coeff,
+            "cost/estimate": cost_estimate,
+        }
+
+    new_cost_lambda, info = cost_lambda.apply_gradient(lambda_loss_fn)
+    return new_cost_lambda, info
 
 def update_cost_mu(
     batch: ConstrainedBatch,
@@ -255,7 +383,9 @@ def update_cost_mu(
         mu = cost_mu.apply({"params": params})
 
         e = batch.rewards + discount * next_nu - nu
-        f_temp = divergence.f_derivative_inverse((e - mu * jnp.array(batch.costs)) / alpha, f_divergence, t=t)
+        f_temp = divergence.f_derivative_inverse(
+            (e - mu * jnp.array(batch.costs)) / alpha, f_divergence, t=t
+        )
         state_action_ratio = jax.nn.relu(f_temp)
 
         f = divergence.f(state_action_ratio, f_divergence, t=t)

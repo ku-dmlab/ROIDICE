@@ -176,6 +176,90 @@ def _update_coptidice(
         {**actor_info, **nu_state_info, **cost_info},
     )
 
+
+@partial(jax.jit, static_argnames=["alg", "f_divergence", "cost_ub_epsilon"])
+def _update_coptidice_ub(
+    alg: COptiDICE,
+    actor: Model,
+    nu_state: Model,
+    cost_lambda: Model,
+    tau: Model,
+    chi_state: Model,
+    batch: ConstrainedBatch,
+    cost_ub_epsilon: float,
+    alpha: float,
+    discount: float,
+    f_divergence: FDivergence,
+    gradient_penalty_coeff: float,
+    cost_limit: float,
+    rng: PRNGKey,
+):
+    if cost_ub_epsilon != 0.0:
+        rng, ub_rng = jax.random.split(rng)
+        new_tau, new_chi_state, ub_info = critic.update_upper_bound(
+            batch,
+            nu_state,
+            tau,
+            chi_state,
+            cost_lambda,
+            cost_ub_epsilon,
+            alpha,
+            discount,
+            f_divergence,
+            ub_rng,
+        )
+    else:
+        new_tau = tau
+        new_chi_state = chi_state
+        ub_info = {"loss/kl_divergence": 0, "loss/tau": 0, "loss/chi_state": 0, "tau": new_tau}
+
+    rng, nu_rng = jax.random.split(rng)
+    new_nu_state, nu_state_info = update_nu_state(
+        batch,
+        cost_lambda,
+        nu_state,
+        alpha,
+        discount,
+        gradient_penalty_coeff,
+        f_divergence,
+        nu_rng,
+    )
+
+    rng, actor_rng = jax.random.split(rng)
+    new_actor, actor_info = update_weighted_bc(
+        batch,
+        actor,
+        new_nu_state,
+        cost_lambda,
+        alpha,
+        discount,
+        f_divergence,
+        actor_rng,
+    )
+
+    new_cost, cost_info = critic.update_cost_lambda_ub(
+        batch,
+        cost_lambda,
+        new_nu_state,
+        new_chi_state,
+        new_tau,
+        alpha,
+        discount,
+        cost_limit,
+        f_divergence,
+    )
+
+    return (
+        rng,
+        new_actor,
+        new_nu_state,
+        new_cost,
+        new_tau,
+        new_chi_state,
+        {**actor_info, **nu_state_info, **cost_info, **ub_info},
+    )
+
+
 @partial(jax.jit, static_argnames=["alg", "f_divergence"])
 def _update_roidice(
     alg: ROIDICE,
@@ -245,6 +329,7 @@ def _update_roidice(
         {**actor_info, **nu_state_info, **cost_mu_info, **cost_t_info},
     )
 
+
 @partial(jax.jit, static_argnames=["alg"])
 def _update_bc(
     alg: BC,
@@ -284,6 +369,7 @@ class Learner(object):
         lr_ratio: float = 1.0,
         cost_lr: float = 3e-4,
         cost_ub: float = 0.5,
+        cost_ub_epsilon: float = 0.0,
         gradient_penalty_coeff: float = 1e-5,
         initial_lambda: float = 1.0,
         divergence: FDivergence = FDivergence.CHI,
@@ -301,7 +387,7 @@ class Learner(object):
         """
 
         # self.expectile = expectile
-        self.tau = tau
+        # self.tau = tau
         self.discount = discount
         self.alpha = alpha
         self.beta = beta
@@ -312,6 +398,7 @@ class Learner(object):
         self.ckpt_dir = ckpt_dir
         self.ckpt_eval_dir = ckpt_eval_dir
         self.cost_ub = cost_ub
+        self.cost_ub_epsilon = cost_ub_epsilon
 
         rng = jax.random.PRNGKey(seed)
         rng, actor_key, critic_key, value_key = jax.random.split(rng, 4)
@@ -382,6 +469,19 @@ class Learner(object):
                     tx=optax.adam(learning_rate=cost_lr),
                 )
 
+                rng, tau_key, chi_state_key = jax.random.split(rng, 3)
+
+                tau_def = value_net.CostLambda(initial_lambda)
+                self.tau = Model.create(
+                    tau_def, inputs=[tau_key], tx=optax.adam(learning_rate=cost_lr)
+                )
+
+                self.chi_state = Model.create(
+                    value_def,
+                    inputs=[chi_state_key, observations],
+                    tx=optax.adam(learning_rate=value_lr),
+                )
+
             case ROIDICE():
                 # TODO
                 rng, nu_state_key, cost_mu_key, cost_t_key = jax.random.split(rng, 4)
@@ -389,21 +489,17 @@ class Learner(object):
                 self.nu_state = Model.create(
                     value_def,
                     inputs=[nu_state_key, observations],
-                    tx=optax.adam(learning_rate=value_lr)
+                    tx=optax.adam(learning_rate=value_lr),
                 )
 
                 mu_def = value_net.CostMu(initial_lambda)
                 self.cost_mu = Model.create(
-                    mu_def,
-                    inputs=[cost_mu_key],
-                    tx=optax.adam(learning_rate=value_lr)
+                    mu_def, inputs=[cost_mu_key], tx=optax.adam(learning_rate=value_lr)
                 )
 
                 t_def = value_net.CostT(initial_lambda)
                 self.cost_t = Model.create(
-                    t_def,
-                    inputs=[cost_t_key],
-                    tx=optax.adam(learning_rate=value_lr)
+                    t_def, inputs=[cost_t_key], tx=optax.adam(learning_rate=value_lr)
                 )
 
             case _:
@@ -463,6 +559,31 @@ class Learner(object):
                 cost_limit=self.cost_ub,
                 rng=self.rng,
             )
+        elif self.alg == COptiDICE.UB:
+            (
+                self.rng,
+                self.actor,
+                self.nu_state,
+                self.cost_lambda,
+                self.tau,
+                self.chi_state,
+                info,
+            ) = _update_coptidice_ub(
+                alg=self.alg,
+                actor=self.actor,
+                nu_state=self.nu_state,
+                cost_lambda=self.cost_lambda,
+                tau=self.tau,
+                chi_state=self.chi_state,
+                batch=batch,
+                cost_ub_epsilon=self.cost_ub_epsilon,
+                alpha=self.alpha,
+                discount=self.discount,
+                f_divergence=self.divergence,
+                gradient_penalty_coeff=self.gradient_penalty_coeff,
+                cost_limit=self.cost_ub,
+                rng=self.rng,
+            )
         elif self.alg == ROIDICE.DEFAULT:
             # TODO
             (
@@ -493,7 +614,7 @@ class Learner(object):
             raise NotImplementedError
 
         return info
-    
+
     def save_ckpt(self, step: int):
         # Silently fail if save directory is not provided.
         if self.ckpt_dir is None:

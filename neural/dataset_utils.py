@@ -386,7 +386,7 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
             observations=observations.astype(np.float32),
             actions=actions.astype(np.float32),
             rewards=rewards.astype(np.float32),
-            masks=1.0 - dones.astype(np.float32),  # never used
+            masks=1.0 - dones.astype(np.float32),
             dones_float=dones.astype(np.float32),
             next_observations=next_observations.astype(np.float32),
             timesteps=np.zeros_like(dones),  # never used

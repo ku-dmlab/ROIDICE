@@ -59,6 +59,7 @@ flags.DEFINE_string(
 )
 flags.DEFINE_float("cost_weight", 1.0, "Weight of cost.")
 flags.DEFINE_float("cost_lb", 0.1, "Lower bound of cost.")
+flags.DEFINE_float("cost_ub_epsilon", 0.0, None)
 
 flags.DEFINE_string("entity", "hy-dmlab", "wandb log entity.")
 
@@ -177,6 +178,7 @@ def main(_):
     kwargs["initial_lambda"] = FLAGS.initial_lambda
     kwargs["cost_ub"] = FLAGS.cost_ub
     kwargs["gradient_penalty_coeff"] = FLAGS.gradient_penalty_coeff
+    kwargs["cost_ub_epsilon"] = FLAGS.cost_ub_epsilon
 
     timestamp = datetime.fromtimestamp(time.time()).strftime("%m_%d_%H_%M_%S")
     ckpt_dir = Path(
@@ -214,6 +216,7 @@ def main(_):
             f"ALPHA{FLAGS.alpha}",
             f"SEED{FLAGS.seed}",
             f"COST_UB{FLAGS.cost_ub}",
+            f"COST_UB_EPSILON{FLAGS.cost_ub_epsilon}",
         ],
         config=kwargs,
         mode="online",
@@ -261,7 +264,7 @@ def main(_):
                 # logging args
                 logging_path = os.path.join(
                         FLAGS.save_dir,
-                        f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/log{i}",
+                        f"{env_name}/{alg}/alpha{FLAGS.alpha}/cost_ub{FLAGS.cost_ub}/seed{FLAGS.seed}/log{i}",
                     )
                 recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 
@@ -284,7 +287,7 @@ def main(_):
     if FLAGS.log_video:
         logging_path = os.path.join(
                 FLAGS.save_dir,
-                f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/ope/",
+                f"{env_name}/{alg}/alpha{FLAGS.alpha}/cost_ub{FLAGS.cost_ub}/seed{FLAGS.seed}/ope/",
             )
         recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 

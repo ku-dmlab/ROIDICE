@@ -26,10 +26,12 @@ class ActionRelevantCost(gym.Wrapper):
         # add ctrl_cost
         if 'half' in self._env_name:
             ctrl_cost_weight = 0.1
+            healthy_reward = 0.0
         else: # hopper, walker2d
             ctrl_cost_weight = 0.001
+            healthy_reward = 1.0
         ctrl_cost = ctrl_cost_weight * info['cost']
-        pure_rewards = rewards + ctrl_cost # forward_reward
+        pure_rewards = rewards + ctrl_cost - healthy_reward # forward_reward
 
         # set cost func
         info['cost'] = self._cost_weight * info['cost'] + self._cost_lb
