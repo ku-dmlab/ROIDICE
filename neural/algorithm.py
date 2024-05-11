@@ -2,6 +2,7 @@ from enum import Enum
 
 class OptiDICE(str, Enum):
     DEFAULT = "OptiDICE"
+    FULL = "FullOptiDICE"
 
 class COptiDICE(str, Enum):
     DEFAULT = "COptiDICE"

@@ -1,14 +1,14 @@
 #!/bin/bash
 
-ALPHAS=(0.01 0.1 1.0 10.0)
-SEEDS=(0 1 2 3 4)
+ALPHAS=(1.0) #(0.01 0.1 1.0 10.0)
+SEEDS=(0) #(0 1 2 3 4)
 
 GPU_ID="$1"
-ALG="COptiDICE"
-ENV="$2" #("hopper-medium-expert-v2" "halfcheetah-medium-expert-v2" "walker2d-medium-expert-v2")
+ALG="$2"
+ENV="$3" #("hopper-medium-expert-v2" "halfcheetah-medium-expert-v2" "walker2d-medium-expert-v2")
 DIV="SoftChi"
-COST_UB="$3" # (30 40 50) (250 300 350) (150 180 200)
-PROJ_NAME="coptidice_absorbing_healthy_medium"
+COST_UB="$4" # (0.5 0.6 0.7) (1.5 1.7 1.9) (2.0 2.5, 3.0)
+PROJ_NAME="coptidice_absorbing_healthy_medium_expert_ub"
 
 EVAL_INTERVAL=100
 EVAL_EPISODES=10
@@ -26,8 +26,8 @@ XLA_PYTHON_CLIENT_MEM_FRACTION=.20 CUDA_VISIBLE_DEVICES="$GPU_ID" python neural/
     --alpha "$alpha" \
     --eval_interval $EVAL_INTERVAL \
     --eval_episodes $EVAL_EPISODES \
-    --log_video True \
+    --log_video False \
     --seed $seed \
-    ${@:1}
+    ${@:4}
 done
 done

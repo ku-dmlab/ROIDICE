@@ -17,7 +17,7 @@ def recorde_video(
     agent: "Learner",
     env: gym.Env,
     logging_path: str,
-    max_steps: int = 2000,
+    max_steps: int = 1500,
 ):
     os.makedirs(logging_path, exist_ok=True)
 
@@ -33,4 +33,4 @@ def recorde_video(
         frame.save(os.path.join(logging_path, f"step{i:04d}.png"))
 
     frames = np.transpose(np.array(frames), (0, 3, 1, 2)) # (t, c, h, w)
-    # wandb.log({f"video/{env_name}": wandb.Video(frames, fps=16)})
+    wandb.log({f"video/{env_name}": wandb.Video(frames, fps=16)})

@@ -25,7 +25,12 @@ from dataset_utils import (
     split_into_trajectories,
 )
 from divergence import FDivergence
-from environment import EnvironmentName, SafetyGymEnvironmentName, GymEnvironmentName
+from environment import (
+    EnvironmentName,
+    SafetyGymEnvironmentName,
+    MujocoEnvironmentName,
+    MazeEnvironmentName,
+)
 from evaluation import evaluate
 from learner import Learner
 from recording_video import recorde_video
@@ -107,7 +112,7 @@ def make_env_and_dataset(
     env = wrappers.SinglePrecision(env)
     if isinstance(env_name, SafetyGymEnvironmentName):
         env = wrappers.CostLowerBound(env)
-    elif isinstance(env_name, GymEnvironmentName):  # Mujoco
+    elif isinstance(env_name, MujocoEnvironmentName):  # Mujoco
         env = wrappers.ActionRelevantCost(
             env, env_name, FLAGS.cost_type, FLAGS.cost_weight, FLAGS.cost_lb
         )
@@ -138,7 +143,7 @@ def make_env_and_dataset(
         dataset = SafetyGymDataset(
             Path("datasets/") / get_fname(env_name),
         )
-    elif isinstance(env_name, GymEnvironmentName):
+    elif isinstance(env_name, MujocoEnvironmentName) or isinstance(env_name, MazeEnvironmentName):
         # dataset = D4RLDataset(env)
         dataset = ConstrainedD4RLDataset(
             env, env_name, FLAGS.cost_type, FLAGS.cost_weight, FLAGS.cost_lb
@@ -236,7 +241,7 @@ def main(_):
             # tqdm.write(f"===i: {i}\n" + str(update_info))
 
             if i % FLAGS.log_interval == 0:
-                wandb.log(update_info, i)
+                wandb.log(update_info, i - 1)
 
             if i % FLAGS.eval_interval == 0:
                 (
@@ -259,13 +264,13 @@ def main(_):
                     },
                     i - 1,
                 )
-            
-            if i == 1 or FLAGS.log_video and i % FLAGS.video_interval == 0:
+
+            if i == 1 or FLAGS.log_video and i == FLAGS.max_steps:
                 # logging args
                 logging_path = os.path.join(
-                        FLAGS.save_dir,
-                        f"{env_name}/{alg}/alpha{FLAGS.alpha}/cost_ub{FLAGS.cost_ub}/seed{FLAGS.seed}/log{i}",
-                    )
+                    FLAGS.save_dir,
+                    f"{env_name}/{alg}/alpha{FLAGS.alpha}/cost_ub{FLAGS.cost_ub}/seed{FLAGS.seed}/log{i}",
+                )
                 recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 
         # agent.save_ckpt(i)
@@ -286,25 +291,25 @@ def main(_):
     # logging args
     if FLAGS.log_video:
         logging_path = os.path.join(
-                FLAGS.save_dir,
-                f"{env_name}/{alg}/alpha{FLAGS.alpha}/cost_ub{FLAGS.cost_ub}/seed{FLAGS.seed}/ope/",
-            )
+            FLAGS.save_dir,
+            f"{env_name}/{alg}/alpha{FLAGS.alpha}/cost_ub{FLAGS.cost_ub}/seed{FLAGS.seed}/ope/",
+        )
         recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 
     # logging
-    tqdm.write(
-        str(
-            {
-                "off_policy_eval/average_return": normalized_return,
-                "off_policy_eval/average_discounted_return": average_discounted_return,
-                "off_policy_eval/discounted_return": discounted_return,
-                "off_policy_eval/undiscounted_cost": undiscounted_cost,
-                "off_policy_eval/discounted_cost": average_discounted_cost,
-                "off_policy_eval/undiscounted_roi": undiscounted_roi,
-                "off_policy_eval/discounted_roi": discounted_roi,
-            }
-        )
-    )
+    # tqdm.write(
+    #     str(
+    #         {
+    #             "off_policy_eval/average_return": normalized_return,
+    #             "off_policy_eval/average_discounted_return": average_discounted_return,
+    #             "off_policy_eval/discounted_return": discounted_return,
+    #             "off_policy_eval/undiscounted_cost": undiscounted_cost,
+    #             "off_policy_eval/discounted_cost": average_discounted_cost,
+    #             "off_policy_eval/undiscounted_roi": undiscounted_roi,
+    #             "off_policy_eval/discounted_roi": discounted_roi,
+    #         }
+    #     )
+    # )
     wandb.log(
         {
             "off_policy_eval/average_return": normalized_return,

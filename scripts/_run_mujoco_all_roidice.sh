@@ -1,7 +1,7 @@
 #!/bin/bash
 
-ALPHAS=(0.001) #(0.001 0.01 0.1 1.0)
-SEEDS=(0) #(0 1 2 3 4)
+ALPHAS=(0.001 0.01 0.1 1.0)
+SEEDS=(0 1 2 3 4)
 
 GPU_ID="$1"
 ALG="ROIDICE"
@@ -21,7 +21,6 @@ XLA_PYTHON_CLIENT_MEM_FRACTION=.20 CUDA_VISIBLE_DEVICES="$GPU_ID" python neural/
     --max_steps 50000 \
     --divergence "$DIV" \
     --cost_ub 1000 \
-    --cost_lb 1.0 \
     --config=./neural/configs/mujoco_config.py \
     --alpha "$alpha" \
     --eval_interval $EVAL_INTERVAL \
