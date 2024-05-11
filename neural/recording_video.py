@@ -30,7 +30,7 @@ def recorde_video(
         frame = env.render('rgb_array').astype(np.uint8)
         frames.append(frame) # for wandb video
         frame = Image.fromarray(frame)
-        frame.save(os.path.join(logging_path, f"step{cnt:04d}.png"))
+        frame.save(os.path.join(logging_path, f"step{i:04d}.png"))
 
     frames = np.transpose(np.array(frames), (0, 3, 1, 2)) # (t, c, h, w)
     wandb.log({f"video/{env_name}": wandb.Video(frames, fps=16)})

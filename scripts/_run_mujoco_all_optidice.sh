@@ -1,13 +1,13 @@
 #!/bin/bash
 
-ALPHAS=(0.01 0.1 1.0 10.0)
-SEEDS=(0 1 2 3 4)
+ALPHAS=(100.0) #(0.01 0.1 1.0 10.0)
+SEEDS=(0) #(0 1 2 3 4)
 
 GPU_ID="$1"
-ALG="OptiDICE"
+ALG="UBOptiDICE"
 ENV="$2" #("hopper-medium-expert-v2" "halfcheetah-medium-expert-v2" "walker2d-medium-expert-v2")
 DIV="SoftChi"
-PROJ_NAME="roidice_absorbing_healthy_medium"
+PROJ_NAME="ultimate_fulldice"
 
 EVAL_INTERVAL=100
 EVAL_EPISODES=10
@@ -25,7 +25,7 @@ XLA_PYTHON_CLIENT_MEM_FRACTION=.20 CUDA_VISIBLE_DEVICES="$GPU_ID" python neural/
     --alpha "$alpha" \
     --eval_interval $EVAL_INTERVAL \
     --eval_episodes $EVAL_EPISODES \
-    --log_video True \
+    --log_video False \
     --seed $seed \
     ${@:3}
 done

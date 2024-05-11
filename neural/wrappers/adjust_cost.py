@@ -1,5 +1,6 @@
 import gym
 import numpy as np
+from environment import MazeEnvironmentName, MujocoEnvironmentName
 
 class ActionRelevantCost(gym.Wrapper):
     def __init__(self, env, env_name, option, cost_weight, cost_lb, eps=1e-5):
@@ -22,14 +23,21 @@ class ActionRelevantCost(gym.Wrapper):
             info['cost'] = np.sum(action ** 2)        
         else:
             raise NotImplementedError
-        
-        # add ctrl_cost
-        if 'half' in self._env_name:
-            ctrl_cost_weight = 0.1
-        else: # hopper, walker2d
-            ctrl_cost_weight = 0.001
-        ctrl_cost = ctrl_cost_weight * info['cost']
-        pure_rewards = rewards + ctrl_cost # forward_reward
+
+        if isinstance(self._env_name, MazeEnvironmentName):
+            pure_rewards = rewards
+        elif isinstance(self._env_name, MujocoEnvironmentName):
+            # add ctrl_cost
+            if 'half' in self._env_name:
+                ctrl_cost_weight = 0.1
+                healthy_reward = 0.0
+            else: # hopper, walker2d
+                ctrl_cost_weight = 0.001
+                healthy_reward = 1.0
+            ctrl_cost = ctrl_cost_weight * info['cost']
+            pure_rewards = rewards + ctrl_cost - healthy_reward # forward_reward
+        else:
+            raise NotImplementedError
 
         # set cost func
         info['cost'] = self._cost_weight * info['cost'] + self._cost_lb
@@ -44,6 +52,7 @@ class TradeFeeCost(gym.Wrapper):
     def step(self, action):
         obs, rewards, done, info = super().step(action)
 
+        rewards *= 10000 # invalidate reward scaling
         info['cost'] = self.env.cost
 
         return obs, rewards, done, info

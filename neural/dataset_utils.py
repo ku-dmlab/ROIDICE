@@ -18,7 +18,7 @@ from gym.spaces import Box
 from tqdm import tqdm
 
 from common import Batch, ConstrainedBatch
-
+from environment import MazeEnvironmentName, MujocoEnvironmentName
 
 def split_into_trajectories(
     observations,
@@ -300,18 +300,25 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
         terminal_indexes = np.insert(terminal_indexes, 0, -1)[:-1]
         # initial_observations = dataset["observations"][terminal_indexes + 1]  # type: ignore
 
-        # cost assignment
-        costs = np.sum(dataset["actions"] ** 2, axis=1)
+        if isinstance(env_name, MazeEnvironmentName):
+            # cost assignment
+            costs = np.sum(dataset["actions"] ** 2, axis=1)
+            pure_rewards = dataset["rewards"] # sparse
+        elif isinstance(env_name, MujocoEnvironmentName):
+            # cost assignment
+            costs = np.sum(dataset["actions"] ** 2, axis=1)
 
-        # add ctrl_cost
-        if "half" in env_name:
-            ctrl_cost_weight = 0.1
-            healty_reward = 0.0
-        else:  # hopper, walker2d
-            ctrl_cost_weight = 0.001
-            healty_reward = 1.0
-        ctrl_cost = ctrl_cost_weight * costs
-        pure_rewards = dataset["rewards"] - healty_reward + ctrl_cost  # forward_reward
+            # add ctrl_cost
+            if "half" in env_name:
+                ctrl_cost_weight = 0.1
+                healty_reward = 0.0
+            else:  # hopper, walker2d
+                ctrl_cost_weight = 0.001
+                healty_reward = 1.0
+            ctrl_cost = ctrl_cost_weight * costs
+            pure_rewards = dataset["rewards"] - healty_reward + ctrl_cost  # forward_reward
+        else:
+            raise NotImplementedError
 
         # set cost func
         affine_costs = cost_weight * costs + cost_lb
@@ -363,7 +370,7 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
             d_tmp = np.append(np.zeros_like(dones_float[s : t + 1]), np.array([0.0, 1.0]))
             dones = np.append(dones, d_tmp)
             s = t + 1
-
+            
         observations = observations.reshape(-1, o_d)
         next_observations = next_observations.reshape(-1, o_d)
         actions = actions.reshape(-1, a_d)
@@ -386,7 +393,7 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
             observations=observations.astype(np.float32),
             actions=actions.astype(np.float32),
             rewards=rewards.astype(np.float32),
-            masks=1.0 - dones.astype(np.float32),  # never used
+            masks=1.0 - dones.astype(np.float32),
             dones_float=dones.astype(np.float32),
             next_observations=next_observations.astype(np.float32),
             timesteps=np.zeros_like(dones),  # never used
@@ -545,7 +552,6 @@ class Log:
         if self.csv_file is not None:
             self.csv_file.close()
 
-
 class ConstrainedNeoRLDataset(ConstrainedDatasets):
     def __init__(self, env, env_name, eps=1e-3):
         name, data_type, train_num = env_name.split("-")
@@ -570,6 +576,7 @@ class ConstrainedNeoRLDataset(ConstrainedDatasets):
             initial_observations = _observations[terminal_indexes[:-1] + 1]
 
             _rewards = dataset["reward"].reshape(-1)
+            _rewards *= 10000 # invalidate reward scaling
 
             observations = np.array([])
             next_observations = np.array([])

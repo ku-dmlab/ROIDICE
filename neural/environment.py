@@ -9,6 +9,8 @@ class AntMaze(str, Enum):
     LARGE_DIVERE = "antmaze-large-diverse-v0"
     LARGE_PLAY = "antmaze-large-play-v0"
 
+class PointMaze(str, Enum):
+    UMAZE = "maze2d-umaze-v1"
 
 class Hopper(str, Enum):
     MEDIUM = "hopper-medium-v2"
@@ -48,9 +50,10 @@ class FinRL(str, Enum):
     HIGH = "finance-high-100"
 
 NeoRLEnvironmentName = FinRL
-GymEnvironmentName = Hopper | Halfcheetah | Walker2D
+MujocoEnvironmentName = Hopper | Halfcheetah | Walker2D
 SafetyGymEnvironmentName = Point | Car
-EnvironmentName = AntMaze | GymEnvironmentName | SafetyGymEnvironmentName | NeoRLEnvironmentName
+MazeEnvironmentName = AntMaze | PointMaze
+EnvironmentName = AntMaze | MujocoEnvironmentName | SafetyGymEnvironmentName | NeoRLEnvironmentName
 
 
 def parse_string(name: str) -> EnvironmentName:

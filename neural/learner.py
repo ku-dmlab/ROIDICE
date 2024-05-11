@@ -113,6 +113,7 @@ def _update_optidice(
         actor,
         new_nu_state,
         None,
+        None,
         alpha,
         discount,
         f_divergence,
@@ -504,7 +505,7 @@ class Learner(object):
         critic = Model.create(
             critic_def,
             inputs=[critic_key, observations, actions],
-            tx=optax.adam(learning_rate=critic_lr),
+            tx=optax.adam(learning_rate=critic_lr*10),
         )
 
         value_def = value_net.ValueCritic(

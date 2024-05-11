@@ -1,15 +1,15 @@
 #!/bin/bash
 
-ALPHAS=(1.0 10.0)
-SEEDS=(3 4) #(0 1 2)
+ALPHAS=(0.01 0.1 1.0 10.0)
+SEEDS=(0) #(3 4) #(0 1 2)
 
 GPU_ID="$1"
-ALG="UBOptiDICE"
+ALG="OptiDICE"
 ENV="$2" # ("finance-medium-100", "finance-high-100")
 DIV="SoftChi"
-PROJ_NAME="roidice_neorl_finance_high"
+PROJ_NAME="neorl_finance_high_wo_initial_state"
 
-EVAL_INTERVAL=100
+EVAL_INTERVAL=1000
 EVAL_EPISODES=10
 
 for seed in ${SEEDS[*]}; do

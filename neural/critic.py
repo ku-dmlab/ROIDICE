@@ -70,13 +70,16 @@ def update_nu_state(
         nu = nu_state.apply({"params": params}, batch.observations)
         next_nu = nu_state.apply({"params": params}, batch.next_observations)
 
-        initial_loss = (1 - discount) * initial_nu
         if ub:
+            initial_loss = -jax.lax.stop_gradient(batch.rewards - q + nu) * (
+                discount * next_nu - nu
+            )
             state_action_ratio = divergence.state_action_ratio_q(
                 nu, costs, q, alpha, cost_coeff, f_divergence
             )
             non_initial_loss = jax.lax.stop_gradient(state_action_ratio) * (discount * next_nu - nu)
         else:
+            initial_loss = (1 - discount) * initial_nu
             e = batch.rewards - cost_coeff * costs + discount * next_nu - nu
 
             state_action_ratio = divergence.state_action_ratio(
@@ -158,13 +161,17 @@ def update_nu_state_cct(
         nu = nu_state.apply({"params": params}, batch.observations)
         next_nu = nu_state.apply({"params": params}, batch.next_observations)
 
-        initial_loss = t * (1 - discount) * initial_nu
         if ub:
+            # initial_loss = (
+            #     -t * jax.lax.stop_gradient(batch.rewards - q + nu) * (discount * next_nu - nu)
+            # )
+            initial_loss = t * (1 - discount) * initial_nu
             state_action_ratio = divergence.state_action_ratio_q(
                 nu, batch.costs, q, alpha, 0, f_divergence, mu=mu, t=t
             )
             non_initial_loss = jax.lax.stop_gradient(state_action_ratio) * (discount * next_nu - nu)
         else:
+            initial_loss = t * (1 - discount) * initial_nu
             e = batch.rewards + discount * next_nu - nu
             state_action_ratio = divergence.state_action_ratio(
                 nu,
@@ -357,15 +364,19 @@ def update_cost_t(
         t = cost_t.apply({"params": params})
 
         if ub:
+            initial_loss = t * (1 - discount) * initial_nu
+            # initial_loss = (
+            #     -t * jax.lax.stop_gradient(batch.rewards - q + nu)
+            # )
             e = q - nu
         else:
+            initial_loss = t * (1 - discount) * initial_nu
             e = batch.rewards + discount * next_nu - nu
         f_temp = divergence.f_derivative_inverse((e - mu * batch.costs) / alpha, f_divergence, t=t)
         state_action_ratio = jax.nn.relu(f_temp)
 
         f = divergence.f(state_action_ratio, f_divergence, t=t)
 
-        initial_loss = t * (1 - discount) * initial_nu
         loss = state_action_ratio * (e - mu * jnp.array(batch.costs)) - alpha * f
         loss = -initial_loss.mean() - loss.mean()
 

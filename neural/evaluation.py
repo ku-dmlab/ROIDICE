@@ -26,7 +26,6 @@ def evaluate(
     discounted_total_cost_ = []
     discounted_total_reward_ = []
     discounted_total_roi_ = []
-    frames = []
     for i in range(num_episodes):
         observation: np.ndarray = env.reset()  # type: ignore
         done = False
@@ -38,6 +37,7 @@ def evaluate(
         cumulated_discount = 1
         cnt = 0
         while not done and cnt < max_step:
+        # while cnt < max_step:
             observation = np.append(observation, 0) # add absorbing dim
             action = agent.sample_actions(observation, temperature=0.0)
             if np.isnan(action).any():
