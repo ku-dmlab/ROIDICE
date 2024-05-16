@@ -30,7 +30,7 @@ class CostT(nn.Module):
     @nn.compact
     def __call__(self) -> Array:
         cost_t = self.param("t", lambda _: jnp.log(self.init_value))
-        cost_t = jnp.clip(jnp.exp(cost_t), 0.0, 1e3)
+        cost_t = jnp.clip(jnp.exp(cost_t), 0.0, 1e5)
         return cost_t
     
 class ValueCritic(nn.Module):

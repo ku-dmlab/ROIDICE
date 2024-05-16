@@ -112,7 +112,7 @@ def make_env_and_dataset(
     env = wrappers.SinglePrecision(env)
     if isinstance(env_name, SafetyGymEnvironmentName):
         env = wrappers.CostLowerBound(env)
-    elif isinstance(env_name, MujocoEnvironmentName):  # Mujoco
+    elif isinstance(env_name, MujocoEnvironmentName):
         env = wrappers.ActionRelevantCost(
             env, env_name, FLAGS.cost_type, FLAGS.cost_weight, FLAGS.cost_lb
         )
@@ -222,6 +222,7 @@ def main(_):
             f"SEED{FLAGS.seed}",
             f"COST_UB{FLAGS.cost_ub}",
             f"COST_UB_EPSILON{FLAGS.cost_ub_epsilon}",
+            f"INITIAL_LAMBDA{FLAGS.initial_lambda}",
         ],
         config=kwargs,
         mode="online",
@@ -265,15 +266,16 @@ def main(_):
                     i - 1,
                 )
 
-            if i == 1 or FLAGS.log_video and i == FLAGS.max_steps:
-                # logging args
-                logging_path = os.path.join(
-                    FLAGS.save_dir,
-                    f"{env_name}/{alg}/alpha{FLAGS.alpha}/cost_ub{FLAGS.cost_ub}/seed{FLAGS.seed}/log{i}",
-                )
-                recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
+            # if i == 1 or FLAGS.log_video and i == FLAGS.max_steps:
+            #     # logging args
+            #     logging_path = os.path.join(
+            #         FLAGS.save_dir,
+            #         f"{env_name}/{alg}/alpha{FLAGS.alpha}/cost_ub{FLAGS.cost_ub}/seed{FLAGS.seed}/log{i}",
+            #     )
+            #     recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 
-        # agent.save_ckpt(i)
+            # if i == FLAGS.max_steps:
+            #     agent.save_ckpt(i)
     else:
         agent.load_ckpt(Path(FLAGS.ckpt_dir), FLAGS.max_steps)
         log(f"Loaded checkpoints from {FLAGS.ckpt_dir}")
@@ -289,12 +291,12 @@ def main(_):
     ) = evaluate(env_name, agent, env, FLAGS.eval_episodes)
 
     # logging args
-    if FLAGS.log_video:
-        logging_path = os.path.join(
-            FLAGS.save_dir,
-            f"{env_name}/{alg}/alpha{FLAGS.alpha}/cost_ub{FLAGS.cost_ub}/seed{FLAGS.seed}/ope/",
-        )
-        recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
+    # if FLAGS.log_video:
+    #     logging_path = os.path.join(
+    #         FLAGS.save_dir,
+    #         f"{env_name}/{alg}/alpha{FLAGS.alpha}/cost_ub{FLAGS.cost_ub}/seed{FLAGS.seed}/ope/",
+    #     )
+    #     recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 
     # logging
     # tqdm.write(
@@ -310,17 +312,17 @@ def main(_):
     #         }
     #     )
     # )
-    wandb.log(
-        {
-            "off_policy_eval/average_return": normalized_return,
-            "off_policy_eval/average_discounted_return": average_discounted_return,
-            "off_policy_eval/discounted_return": discounted_return,
-            "off_policy_eval/undiscounted_cost": undiscounted_cost,
-            "off_policy_eval/discounted_cost": average_discounted_cost,
-            "off_policy_eval/undiscounted_roi": undiscounted_roi,
-            "off_policy_eval/discounted_roi": discounted_roi,
-        }
-    )
+    # wandb.log(
+    #     {
+    #         "off_policy_eval/average_return": normalized_return,
+    #         "off_policy_eval/average_discounted_return": average_discounted_return,
+    #         "off_policy_eval/discounted_return": discounted_return,
+    #         "off_policy_eval/undiscounted_cost": undiscounted_cost,
+    #         "off_policy_eval/discounted_cost": average_discounted_cost,
+    #         "off_policy_eval/undiscounted_roi": undiscounted_roi,
+    #         "off_policy_eval/discounted_roi": discounted_roi,
+    #     }
+    # )
 
     log.close()
     wandb.finish()

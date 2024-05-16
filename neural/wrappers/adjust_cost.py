@@ -20,7 +20,7 @@ class ActionRelevantCost(gym.Wrapper):
         elif self._option == "min":
             info['cost'] = np.min(abs(action)) + self._eps
         elif self._option == "ctrl":
-            info['cost'] = np.sum(action ** 2)        
+            info['cost'] = np.sum(action ** 2)     
         else:
             raise NotImplementedError
 
@@ -34,13 +34,13 @@ class ActionRelevantCost(gym.Wrapper):
             else: # hopper, walker2d
                 ctrl_cost_weight = 0.001
                 healthy_reward = 1.0
-            ctrl_cost = ctrl_cost_weight * info['cost']
+            ctrl_cost = ctrl_cost_weight * np.sum(action ** 2)
             pure_rewards = rewards + ctrl_cost - healthy_reward # forward_reward
         else:
             raise NotImplementedError
 
         # set cost func
-        info['cost'] = self._cost_weight * info['cost'] + self._cost_lb
+        info['cost'] = self._cost_weight * np.mean(action ** 2) + self._cost_lb
         
         return obs, pure_rewards, done, info
 

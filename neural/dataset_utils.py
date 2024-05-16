@@ -305,9 +305,6 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
             costs = np.sum(dataset["actions"] ** 2, axis=1)
             pure_rewards = dataset["rewards"] # sparse
         elif isinstance(env_name, MujocoEnvironmentName):
-            # cost assignment
-            costs = np.sum(dataset["actions"] ** 2, axis=1)
-
             # add ctrl_cost
             if "half" in env_name:
                 ctrl_cost_weight = 0.1
@@ -315,13 +312,13 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
             else:  # hopper, walker2d
                 ctrl_cost_weight = 0.001
                 healty_reward = 1.0
-            ctrl_cost = ctrl_cost_weight * costs
+            ctrl_cost = ctrl_cost_weight * np.sum(dataset["actions"] ** 2, axis=1)
             pure_rewards = dataset["rewards"] - healty_reward + ctrl_cost  # forward_reward
         else:
             raise NotImplementedError
 
         # set cost func
-        affine_costs = cost_weight * costs + cost_lb
+        affine_costs = cost_weight * np.mean(dataset["actions"] ** 2, axis=1) + cost_lb
 
         # absorbing state
         absorbing_dim = np.zeros(len(dataset["observations"]))

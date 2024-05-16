@@ -7,6 +7,7 @@ class OptiDICE(str, Enum):
 class COptiDICE(str, Enum):
     DEFAULT = "COptiDICE"
     UB = "UBCOptiDICE" # upper bound
+    LAMBDA = "LambdaCOptiDICE"
 
 class ROIDICE(str, Enum):
     DEFAULT = "ROIDICE"

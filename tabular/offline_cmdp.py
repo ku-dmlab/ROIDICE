@@ -313,12 +313,12 @@ def roidice_max_roi_mosek_inf(cmdp: util.CMDP, pi_b: np.ndarray, alpha: float):
     try:
         prob.solve(solver=cp.MOSEK)
     except cp.error.SolverError:
-        return None, -1, -1
+        return None, -1, -1, -1
     except scipy.sparse.linalg._eigen.arpack.ArpackNoConvergence:
         try:
             prob.solve(solver=cp.ECOS)
         except cp.error.SolverError:
-            return None, -1, -1
+            return None, -1, -1, -1
     w = x.value / t.value
 
     assert np.all(w >= -1e-4), w
@@ -333,7 +333,7 @@ def roidice_max_roi_mosek_inf(cmdp: util.CMDP, pi_b: np.ndarray, alpha: float):
     pi /= np.sum(pi, axis=1, keepdims=True)
     assert np.all(pi >= -1e-6), pi
 
-    return np.array(pi), off_eval_r, off_eval_c
+    return np.array(pi), off_eval_r, off_eval_c, t.value
 
 
 def roidice_max_roi_mosek(cmdp: util.CMDP, pi_b: np.ndarray, alpha: float):

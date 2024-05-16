@@ -261,6 +261,45 @@ def _update_coptidice_ub(
 
 
 @partial(jax.jit, static_argnames=["alg", "f_divergence"])
+def _update_coptidice_lambda(
+    alg: COptiDICE,
+    actor: Model,
+    nu_state: Model,
+    cost_lambda: Model,
+    batch: ConstrainedBatch,
+    alpha: float,
+    discount: float,
+    f_divergence: FDivergence,
+    gradient_penalty_coeff: float,
+    rng: PRNGKey,
+):
+    rng, nu_rng = jax.random.split(rng)
+    new_nu_state, nu_state_info = update_nu_state(
+        batch,
+        cost_lambda,
+        nu_state,
+        alpha,
+        discount,
+        gradient_penalty_coeff,
+        f_divergence,
+        nu_rng,
+    )
+
+    rng, actor_rng = jax.random.split(rng)
+    new_actor, actor_info = update_weighted_bc(
+        batch,
+        actor,
+        new_nu_state,
+        cost_lambda,
+        alpha,
+        discount,
+        f_divergence,
+        actor_rng,
+    )
+
+    return rng, new_actor, new_nu_state, {**actor_info, **nu_state_info, "loss/lambda": cost_lambda()}
+
+@partial(jax.jit, static_argnames=["alg", "f_divergence"])
 def _update_roidice(
     alg: ROIDICE,
     actor: Model,
@@ -584,6 +623,24 @@ class Learner(object):
                 cost_limit=self.cost_ub,
                 rng=self.rng,
             )
+        elif self.alg == COptiDICE.LAMBDA:
+            (
+                self.rng,
+                self.actor,
+                self.nu_state,
+                info,
+            ) = _update_coptidice_lambda(
+                alg=self.alg,
+                actor=self.actor,
+                nu_state=self.nu_state,
+                cost_lambda=self.cost_lambda,
+                batch=batch,
+                alpha=self.alpha,
+                discount=self.discount,
+                f_divergence=self.divergence,
+                gradient_penalty_coeff=self.gradient_penalty_coeff,
+                rng=self.rng,
+            )
         elif self.alg == ROIDICE.DEFAULT:
             # TODO
             (
@@ -626,18 +683,18 @@ class Learner(object):
             step=step,
             prefix="actor_ckpt_",
         )
-        checkpoints.save_checkpoint(
-            ckpt_dir=str(self.ckpt_dir),
-            target=self.critic.train_state,
-            step=step,
-            prefix="critic_ckpt_",
-        )
-        checkpoints.save_checkpoint(
-            ckpt_dir=str(self.ckpt_dir),
-            target=self.value.train_state,
-            step=step,
-            prefix="value_ckpt_",
-        )
+        # checkpoints.save_checkpoint(
+        #     ckpt_dir=str(self.ckpt_dir),
+        #     target=self.critic.train_state,
+        #     step=step,
+        #     prefix="critic_ckpt_",
+        # )
+        # checkpoints.save_checkpoint(
+        #     ckpt_dir=str(self.ckpt_dir),
+        #     target=self.value.train_state,
+        #     step=step,
+        #     prefix="value_ckpt_",
+        # )
 
     def load_ckpt(self, ckpt_dir: Path, step: int):
         actor_state = checkpoints.restore_checkpoint(
@@ -649,20 +706,20 @@ class Learner(object):
         self.actor = self.actor.replace(params=actor_state.params)
         self.actor = self.actor.replace(tx=actor_state.tx)
 
-        critic_state = checkpoints.restore_checkpoint(
-            ckpt_dir=ckpt_dir,
-            target=self.critic.train_state,
-            step=step,
-            prefix="critic_ckpt_",
-        )
-        self.critic = self.critic.replace(params=critic_state.params)
-        self.critic = self.critic.replace(tx=critic_state.tx)
+        # critic_state = checkpoints.restore_checkpoint(
+        #     ckpt_dir=ckpt_dir,
+        #     target=self.critic.train_state,
+        #     step=step,
+        #     prefix="critic_ckpt_",
+        # )
+        # self.critic = self.critic.replace(params=critic_state.params)
+        # self.critic = self.critic.replace(tx=critic_state.tx)
 
-        value_state = checkpoints.restore_checkpoint(
-            ckpt_dir=ckpt_dir,
-            target=self.value.train_state,
-            step=step,
-            prefix="value_ckpt_",
-        )
-        self.value = self.value.replace(params=value_state.params)
-        self.value = self.value.replace(tx=value_state.tx)
+        # value_state = checkpoints.restore_checkpoint(
+        #     ckpt_dir=ckpt_dir,
+        #     target=self.value.train_state,
+        #     step=step,
+        #     prefix="value_ckpt_",
+        # )
+        # self.value = self.value.replace(params=value_state.params)
+        # self.value = self.value.replace(tx=value_state.tx)
