@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from flax.training import checkpoints
+# from flax.training import checkpoints
 from jax import Array
 
 import critic
@@ -672,17 +672,17 @@ class Learner(object):
 
         return info
 
-    def save_ckpt(self, step: int):
-        # Silently fail if save directory is not provided.
-        if self.ckpt_dir is None:
-            pass
+    # def save_ckpt(self, step: int):
+    #     # Silently fail if save directory is not provided.
+    #     if self.ckpt_dir is None:
+    #         pass
 
-        checkpoints.save_checkpoint(
-            ckpt_dir=str(self.ckpt_dir),
-            target=self.actor.train_state,
-            step=step,
-            prefix="actor_ckpt_",
-        )
+    #     checkpoints.save_checkpoint(
+    #         ckpt_dir=str(self.ckpt_dir),
+    #         target=self.actor.train_state,
+    #         step=step,
+    #         prefix="actor_ckpt_",
+    #     )
         # checkpoints.save_checkpoint(
         #     ckpt_dir=str(self.ckpt_dir),
         #     target=self.critic.train_state,
@@ -696,15 +696,15 @@ class Learner(object):
         #     prefix="value_ckpt_",
         # )
 
-    def load_ckpt(self, ckpt_dir: Path, step: int):
-        actor_state = checkpoints.restore_checkpoint(
-            ckpt_dir=ckpt_dir,
-            target=self.actor.train_state,
-            step=step,
-            prefix="actor_ckpt_",
-        )
-        self.actor = self.actor.replace(params=actor_state.params)
-        self.actor = self.actor.replace(tx=actor_state.tx)
+    # def load_ckpt(self, ckpt_dir: Path, step: int):
+        # actor_state = checkpoints.restore_checkpoint(
+        #     ckpt_dir=ckpt_dir,
+        #     target=self.actor.train_state,
+        #     step=step,
+        #     prefix="actor_ckpt_",
+        # )
+        # self.actor = self.actor.replace(params=actor_state.params)
+        # self.actor = self.actor.replace(tx=actor_state.tx)
 
         # critic_state = checkpoints.restore_checkpoint(
         #     ckpt_dir=ckpt_dir,

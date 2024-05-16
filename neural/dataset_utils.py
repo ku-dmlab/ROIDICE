@@ -399,6 +399,177 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
             costs=costs,
         )
 
+class BCD4RLDataset(ConstrainedDatasets):
+    def __init__(
+        self,
+        env: gym.Env,
+        env_name: str,
+        cost_weight: float,
+        cost_lb: float,
+        sigma: float,
+        gamma: float = 0.99,
+        clip_to_eps: bool = True,
+        eps: float = 1e-5,
+    ):
+        percentile = [0.2, 0.5, 0.8, 1.0]
+        assert sigma in percentile, f"sigma should be one of {percentile}"
+        dataset_roi = {
+                "hopper-medium-v2": [2.60423927, 2.74657146, 2.88110989, 3.26189566],
+                "hopper-medium-expert-v2": [2.66304171, 2.84240125, 4.09815193, 4.56955327],
+                "hopper-expert-v2": [6.68388403, 6.8110371, 6.95890627, 7.48916313],
+                "walker2d-medium-v2": [1.41967956, 2.05403983, 2.50637276, 2.98307867],
+                "walker2d-medium-expert-v2": [1.81942185, 2.65203874, 4.02178769, 4.31953169],
+                "walker2d-expert-v2": [6.1900696, 6.37031235, 6.51240573, 6.76719999],
+                "halfcheetah-medium-v2": [3.46260252, 3.77744125, 4.05418296, 4.77811905],
+                "halfcheetah-medium-expert-v2": [3.68917158, 4.50357379, 9.39562684, 10.22955459],
+                "halfcheetah-expert-v2": [11.09085119, 11.39611414, 11.68722855, 12.31456721]}
+
+        dataset = d4rl.qlearning_dataset(env)
+        
+        if clip_to_eps:
+            lim = 1 - eps
+            dataset["actions"] = np.clip(dataset["actions"], -lim, lim)
+
+        dones_float = np.zeros_like(dataset["rewards"])
+
+        # add ctrl_cost
+        if "half" in env_name:
+            ctrl_cost_weight = 0.1
+            healty_reward = 0.0
+        else:  # hopper, walker2d
+            ctrl_cost_weight = 0.001
+            healty_reward = 1.0
+        ctrl_cost = ctrl_cost_weight * np.sum(dataset["actions"] ** 2, axis=1)
+        pure_rewards = dataset["rewards"] - healty_reward + ctrl_cost  # forward_reward
+
+        # set cost func
+        affine_costs = cost_weight * np.mean(dataset["actions"] ** 2, axis=1) + cost_lb
+
+        traj_roi = []
+        cumulated_discount = 1
+        discounted_return = 0
+        discounted_cost = 0
+        for i in range(len(dones_float)):
+            if i < len(dones_float) - 1:
+                observation_gap = float(
+                    np.linalg.norm(dataset["observations"][i + 1] - dataset["next_observations"][i])
+                )
+
+            discounted_return += cumulated_discount * pure_rewards[i]
+            discounted_cost += cumulated_discount * affine_costs[i]
+            dones_float[i] = 0
+
+            cumulated_discount *= gamma
+
+            if observation_gap > 1e-6 or dataset["terminals"][i] == 1.0:
+                dones_float[i] = 1
+                roi = discounted_return / discounted_cost
+                traj_roi.append(roi)
+                cumulated_discount = 1
+                discounted_return = 0
+                discounted_cost = 0
+
+        dones_float[-1] = 1
+
+        traj_roi = np.array(traj_roi)
+        standard = dataset_roi[env_name][percentile.index(sigma)]
+
+        # Create timestep informations.
+        t = 0
+        timesteps = np.zeros_like(dataset["rewards"], dtype=np.int64)
+        for i in range(len(dataset["observations"])):
+            timesteps[i] = t
+
+            if dones_float[i] == 1.0:
+                t = 0
+            else:
+                t += 1
+
+        # Extract initial observations.
+        (terminal_indexes,) = np.where(dones_float == 1.0)  # noqa: E712
+        terminal_indexes = np.insert(terminal_indexes, 0, -1)[:-1]
+        # initial_observations = dataset["observations"][terminal_indexes + 1]  # type: ignore
+
+        assert (
+            len(traj_roi) == len(terminal_indexes) - 1
+        ), f"traj_roi: {len(traj_roi)}, terminal_indices: {len(terminal_indexes)}"
+
+        # absorbing state
+        absorbing_dim = np.zeros(len(dataset["observations"]))
+        _observations = np.concatenate((dataset["observations"], absorbing_dim[:, np.newaxis]), axis=1)
+        _next_observations = np.concatenate(
+            (dataset["next_observations"], absorbing_dim[:, np.newaxis]), axis=1
+        )
+
+        initial_observations = _observations[terminal_indexes + 1]  # type: ignore
+
+        absorbing_state = np.zeros(len(_observations[0]))
+        absorbing_action = np.zeros(len(dataset["actions"][0]))
+        b, o_d = _observations.shape
+        _, a_d = dataset["actions"].shape
+        observations = np.array([])
+        next_observations = np.array([])
+        actions = np.array([])
+        rewards = np.array([])
+        costs = np.array([])
+        s = 0
+        term = np.append(terminal_indexes, np.array(b - 1))  # add the last terminal index
+        dones = np.array([])
+        for idx, t in tqdm(enumerate(term[1:])):
+            if idx < len(traj_roi) and traj_roi[idx] <= standard:
+                # observations
+                obs_tmp = np.vstack((_observations[s : t + 1], _next_observations[t], absorbing_state))
+                obs_tmp[-1, -1] = 1
+                observations = np.append(observations, obs_tmp)
+                # next observations
+                next_obs_tmp = np.vstack((_next_observations[s : t + 1], absorbing_state, absorbing_state))
+                next_obs_tmp[-2:, -1] = 1
+                next_observations = np.append(next_observations, next_obs_tmp)
+                # actions
+                a_tmp = np.vstack((dataset["actions"][s : t + 1], absorbing_action, absorbing_action))
+                actions = np.append(actions, a_tmp)
+                # rewards
+                r_tmp = np.append(pure_rewards[s : t + 1], np.zeros(2))
+                rewards = np.append(rewards, r_tmp)
+                # costs
+                c_tmp = np.append(affine_costs[s : t + 1], np.zeros(2) + 0.001)
+                costs = np.append(costs, c_tmp)
+                # donse_float
+                d_tmp = np.append(np.zeros_like(dones_float[s : t + 1]), np.array([0.0, 1.0]))
+                dones = np.append(dones, d_tmp)
+            s = t + 1
+
+        observations = observations.reshape(-1, o_d)
+        next_observations = next_observations.reshape(-1, o_d)
+        actions = actions.reshape(-1, a_d)
+        rewards = rewards.reshape(-1)
+        costs = costs.reshape(-1)
+        dones = dones.reshape(-1)
+
+        # for the last episode
+        if traj_roi[-1] >= standard:
+            observations = np.vstack((observations, next_observations[-1], absorbing_state))
+            next_observations = np.vstack((next_observations, absorbing_state, absorbing_state))
+            actions = np.vstack((actions, absorbing_action, absorbing_action))
+            rewards = np.concatenate((rewards, np.zeros(2)))
+            costs = np.concatenate((costs, np.zeros(2) + 0.001))
+            dones = np.concatenate((dones, np.array([0.0, 1.0])))
+
+        assert observations.shape == next_observations.shape
+        assert len(rewards) == len(costs) == len(observations) == len(actions)
+
+        super().__init__(
+            observations=observations.astype(np.float32),
+            actions=actions.astype(np.float32),
+            rewards=rewards.astype(np.float32),
+            masks=1.0 - dones.astype(np.float32),
+            dones_float=dones.astype(np.float32),
+            next_observations=next_observations.astype(np.float32),
+            timesteps=np.zeros_like(dones),  # never used
+            initial_observations=initial_observations.astype(np.float32),
+            size=len(observations),
+            costs=costs,
+        )
 
 class SafetyGymDataset(ConstrainedDatasets):
     def __init__(

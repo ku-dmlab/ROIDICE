@@ -18,7 +18,8 @@ class BC(str, Enum):
 
 UnconstrainedRL = OptiDICE
 ConstrainedRL = COptiDICE | ROIDICE
-Algorithm = UnconstrainedRL | ConstrainedRL | BC
+UnconstrainedIL = BC
+Algorithm = UnconstrainedRL | ConstrainedRL | UnconstrainedIL
 
 
 def parse_string(name: str) -> Algorithm:

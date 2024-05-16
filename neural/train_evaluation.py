@@ -7,7 +7,7 @@ from typing import Tuple
 import d4rl  # noqa: F401
 import gym
 import numpy as np
-import safety_gym  # noqa: F401
+# import safety_gym  # noqa: F401
 from absl import app, flags
 from ml_collections import config_flags
 from tqdm import tqdm
@@ -23,6 +23,7 @@ from dataset_utils import (
     Log,
     SafetyGymDataset,
     split_into_trajectories,
+    BCD4RLDataset,
 )
 from divergence import FDivergence
 from environment import (
@@ -31,6 +32,7 @@ from environment import (
     MujocoEnvironmentName,
     MazeEnvironmentName,
 )
+from algorithm import Algorithm, UnconstrainedIL
 from evaluation import evaluate
 from learner import Learner
 from recording_video import recorde_video
@@ -65,6 +67,7 @@ flags.DEFINE_string(
 flags.DEFINE_float("cost_weight", 1.0, "Weight of cost.")
 flags.DEFINE_float("cost_lb", 0.1, "Lower bound of cost.")
 flags.DEFINE_float("cost_ub_epsilon", 0.0, None)
+flags.DEFINE_float("sigma", 1.0, "Percentage of BC dataset.")
 
 flags.DEFINE_string("entity", "hy-dmlab", "wandb log entity.")
 
@@ -104,12 +107,12 @@ def normalize(dataset):
 
 
 def make_env_and_dataset(
-    env_name: EnvironmentName, seed: int
+    env_name: EnvironmentName, alg: Algorithm,  seed: int
 ) -> Tuple[gym.Env, D4RLDataset | SafetyGymDataset]:
     env = gym.make(env_name)
 
     env = wrappers.EpisodeMonitor(env)
-    env = wrappers.SinglePrecision(env)
+    # env = wrappers.SinglePrecision(env)
     if isinstance(env_name, SafetyGymEnvironmentName):
         env = wrappers.CostLowerBound(env)
     elif isinstance(env_name, MujocoEnvironmentName):
@@ -145,9 +148,12 @@ def make_env_and_dataset(
         )
     elif isinstance(env_name, MujocoEnvironmentName) or isinstance(env_name, MazeEnvironmentName):
         # dataset = D4RLDataset(env)
-        dataset = ConstrainedD4RLDataset(
-            env, env_name, FLAGS.cost_type, FLAGS.cost_weight, FLAGS.cost_lb
-        )
+        if isinstance(alg, UnconstrainedIL): # BC
+            dataset = BCD4RLDataset(env, env_name, FLAGS.cost_weight, FLAGS.cost_lb, FLAGS.sigma)
+        else:
+            dataset = ConstrainedD4RLDataset(
+                env, env_name, FLAGS.cost_type, FLAGS.cost_weight, FLAGS.cost_lb
+            )
     else:
         raise NotImplementedError
 
@@ -173,7 +179,7 @@ def main(_):
     alg = algorithm.parse_string(FLAGS.alg)
     divergence = FDivergence(FLAGS.divergence)
 
-    env, dataset = make_env_and_dataset(env_name, FLAGS.seed)
+    env, dataset = make_env_and_dataset(env_name, alg, FLAGS.seed)
 
     kwargs = dict(FLAGS.config)
     kwargs["alpha"] = FLAGS.alpha
@@ -211,7 +217,7 @@ def main(_):
         entity=FLAGS.entity,
         project=FLAGS.proj_name,
         group=env_name,
-        name=f"{alg}_alpha{FLAGS.alpha}",
+        name=f"{alg}_sigma{FLAGS.sigma}",
         tags=[
             env_name,
             alg,
@@ -276,9 +282,9 @@ def main(_):
 
             # if i == FLAGS.max_steps:
             #     agent.save_ckpt(i)
-    else:
-        agent.load_ckpt(Path(FLAGS.ckpt_dir), FLAGS.max_steps)
-        log(f"Loaded checkpoints from {FLAGS.ckpt_dir}")
+    # else:
+    #     agent.load_ckpt(Path(FLAGS.ckpt_dir), FLAGS.max_steps)
+    #     log(f"Loaded checkpoints from {FLAGS.ckpt_dir}")
 
     # Off-policy evaluation
     (
