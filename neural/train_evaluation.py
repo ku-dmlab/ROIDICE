@@ -213,11 +213,13 @@ def main(_):
     kwargs["cost_lb"] = FLAGS.cost_lb
     kwargs["cost_weight"] = FLAGS.cost_weight
 
+    kwargs["sigma"] = FLAGS.sigma
+
     wandb.init(
         entity=FLAGS.entity,
         project=FLAGS.proj_name,
         group=env_name,
-        name=f"{alg}_sigma{FLAGS.sigma}",
+        name=f"{alg}_sigma{FLAGS.sigma}_{env_name}",
         tags=[
             env_name,
             alg,
@@ -229,6 +231,7 @@ def main(_):
             f"COST_UB{FLAGS.cost_ub}",
             f"COST_UB_EPSILON{FLAGS.cost_ub_epsilon}",
             f"INITIAL_LAMBDA{FLAGS.initial_lambda}",
+            f"SIGMA{FLAGS.sigma}"
         ],
         config=kwargs,
         mode="online",

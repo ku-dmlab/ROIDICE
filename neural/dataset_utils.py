@@ -411,18 +411,18 @@ class BCD4RLDataset(ConstrainedDatasets):
         clip_to_eps: bool = True,
         eps: float = 1e-5,
     ):
-        percentile = [0.2, 0.5, 0.8, 1.0]
+        percentile = [0.2, 0.5, 0.8]
         assert sigma in percentile, f"sigma should be one of {percentile}"
         dataset_roi = {
-                "hopper-medium-v2": [2.60423927, 2.74657146, 2.88110989, 3.26189566],
-                "hopper-medium-expert-v2": [2.66304171, 2.84240125, 4.09815193, 4.56955327],
-                "hopper-expert-v2": [6.68388403, 6.8110371, 6.95890627, 7.48916313],
-                "walker2d-medium-v2": [1.41967956, 2.05403983, 2.50637276, 2.98307867],
-                "walker2d-medium-expert-v2": [1.81942185, 2.65203874, 4.02178769, 4.31953169],
-                "walker2d-expert-v2": [6.1900696, 6.37031235, 6.51240573, 6.76719999],
-                "halfcheetah-medium-v2": [3.46260252, 3.77744125, 4.05418296, 4.77811905],
-                "halfcheetah-medium-expert-v2": [3.68917158, 4.50357379, 9.39562684, 10.22955459],
-                "halfcheetah-expert-v2": [11.09085119, 11.39611414, 11.68722855, 12.31456721]}
+            "hopper-medium-v2": [2.6042392, 2.7465714, 2.8811098, 3.2618956],
+            "hopper-medium-expert-v2": [2.6630417, 2.8424012, 4.0981519, 4.5695532],
+            "hopper-expert-v2": [4.0425521, 4.1290672, 4.2310144, 4.5695532],
+            "walker2d-medium-v2": [1.4196795, 2.0540398, 2.5063727, 2.9830786],
+            "walker2d-medium-expert-v2": [1.8194218, 2.6520387, 4.0217876, 4.3195316],
+            "walker2d-expert-v2": [3.8507787, 4.0027020, 4.1195273, 4.319531],
+            "halfcheetah-medium-v2": [5.3443152, 5.6646086, 5.9483203, 6.6783805],
+            "halfcheetah-medium-expert-v2": [5.579251, 6.3891783, 11.4810434, 12.3145672],
+            "halfcheetah-expert-v2": [11.0908511, 11.3961141, 11.6872285, 12.3145672]}
 
         dataset = d4rl.qlearning_dataset(env)
         
@@ -516,7 +516,7 @@ class BCD4RLDataset(ConstrainedDatasets):
         term = np.append(terminal_indexes, np.array(b - 1))  # add the last terminal index
         dones = np.array([])
         for idx, t in tqdm(enumerate(term[1:])):
-            if idx < len(traj_roi) and traj_roi[idx] <= standard:
+            if idx < len(traj_roi) and traj_roi[idx] >= standard:
                 # observations
                 obs_tmp = np.vstack((_observations[s : t + 1], _next_observations[t], absorbing_state))
                 obs_tmp[-1, -1] = 1
@@ -556,7 +556,7 @@ class BCD4RLDataset(ConstrainedDatasets):
             dones = np.concatenate((dones, np.array([0.0, 1.0])))
 
         assert observations.shape == next_observations.shape
-        assert len(rewards) == len(costs) == len(observations) == len(actions)
+        assert len(rewards) == len(costs) == len(observations) == len(actions) != 0
 
         super().__init__(
             observations=observations.astype(np.float32),
