@@ -1,11 +1,11 @@
 #!/bin/bash
 
-ALPHAS=(0.00001 0.0001 0.001) #(0.0001 0.001 0.01 0.1 1.0)
+ALPHAS=(0.000001) #(0.00001 0.0001 0.001) #(0.0001 0.001 0.01 0.1 1.0)
 SEEDS=(0 1 2 3 4)
 
 GPU_ID="$1"
 ALG="ROIDICE"
-ENV=("hopper-medium-v2" "hopper-medium-expert-v2" "hopper-expert-v2") # "hopper-medium-expert-v2"
+ENV=("hopper-expert-v2") # ("hopper-medium-v2" "hopper-medium-expert-v2" "hopper-expert-v2") # "hopper-medium-expert-v2"
 DIV="SoftChiT"
 PROJ_NAME="mujoco_hopper_mean_cost_final"
 

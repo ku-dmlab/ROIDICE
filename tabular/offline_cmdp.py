@@ -52,7 +52,7 @@ def _compute_marginal_distribution(mdp, pi, regularizer=0):
     return d_pi.reshape(mdp.num_states, mdp.num_actions)
 
 
-def generate_baseline_policy(cmdp: util.CMDP, optimality: float) -> np.ndarray:
+def generate_baseline_policy(cmdp: util.CMDP, optimality: float, verbose: bool=False) -> np.ndarray:
     """Generate a baseline policy for the CMDP.
 
     Args:
@@ -81,14 +81,15 @@ def generate_baseline_policy(cmdp: util.CMDP, optimality: float) -> np.ndarray:
         pi_soft /= np.sum(pi_soft, axis=1, keepdims=True)
         r, _, c, _ = util.policy_evaluation(cmdp, pi_soft)
 
-        logging.info(
-            "temp=%.6f, R=%.3f, C=%.3f / v_opt=%.3f, f_target=%.3f",
-            temperature,
-            r[0],
-            c[0][0],
-            v_opt,
-            v_final_target,
-        )
+        if verbose:
+            logging.info(
+                "temp=%.6f, R=%.3f, C=%.3f / v_opt=%.3f, f_target=%.3f",
+                temperature,
+                r[0],
+                c[0][0],
+                v_opt,
+                v_final_target,
+            )
 
     assert np.all(pi_soft >= -1e-4)
 
