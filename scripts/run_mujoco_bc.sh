@@ -3,8 +3,8 @@ SEEDS=(0)
 
 GPU_ID="$1"
 ALG="BC"
-ENV="$2" #("hopper-medium-v2" "hopper-medium-expert-v2" "hopper-expert-v2" "walker2d-medium-v2" "walker2d-medium-expert-v2" "walker2d-expert-v2" "halfcheetah-medium-v2" "halfcheetah-medium-expert-v2" "halfcheetah-expert-v2")
-PROJ_NAME="BC_mujoco_all"
+ENV=("hopper-medium-v2" "hopper-medium-expert-v2" "hopper-expert-v2" "walker2d-medium-v2" "walker2d-medium-expert-v2" "walker2d-expert-v2" "halfcheetah-medium-v2" "halfcheetah-medium-expert-v2" "halfcheetah-expert-v2")
+PROJ_NAME="BC_mujoco_all_final"
 SIGMA=(0.2 0.5 0.8)
 
 EVAL_INTERVAL=1000
