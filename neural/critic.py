@@ -162,10 +162,10 @@ def update_nu_state_cct(
         next_nu = nu_state.apply({"params": params}, batch.next_observations)
 
         if ub:
-            # initial_loss = (
-            #     -t * jax.lax.stop_gradient(batch.rewards - q + nu) * (discount * next_nu - nu)
-            # )
-            initial_loss = t * (1 - discount) * initial_nu
+            initial_loss = (
+                -t * jax.lax.stop_gradient(batch.rewards - q + nu) * (discount * next_nu - nu)
+            )
+            # initial_loss = t * (1 - discount) * initial_nu
             state_action_ratio = divergence.state_action_ratio_q(
                 nu, batch.costs, q, alpha, 0, f_divergence, mu=mu, t=t
             )
@@ -364,10 +364,10 @@ def update_cost_t(
         t = cost_t.apply({"params": params})
 
         if ub:
-            initial_loss = t * (1 - discount) * initial_nu
-            # initial_loss = (
-            #     -t * jax.lax.stop_gradient(batch.rewards - q + nu)
-            # )
+            # initial_loss = t * (1 - discount) * initial_nu
+            initial_loss = (
+                -t * jax.lax.stop_gradient(batch.rewards - q + nu)
+            )
             e = q - nu
         else:
             initial_loss = t * (1 - discount) * initial_nu

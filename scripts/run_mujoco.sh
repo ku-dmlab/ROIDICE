@@ -1,32 +1,63 @@
 #!/bin/bash
 
-ALPHAS=(0.01 0.1 1.0 10.0)
-SEEDS=(0 1 2)
+ALPHA=0.0001 #(0.001 0.0001) #(0.001 0.01 0.1 1.0)
+SEEDS=(0 1 2) # (0 1 2 3 4)
 
 GPU_ID="$1"
-ALG="$2"
-ENV="$3"
-DIV="$4"
-COST_UB=$5
-PROJ_NAME="$6"
+ALG="ROIDICE"
+ENV="hopper-medium-expert-v2" #("hopper-medium-v2" "hopper-medium-expert-v2" "hopper-expert-v2")
+DIV="SoftChiT"
+PROJ_NAME="roidice_mujoco_episode_length_mean_cost"
 
-EVAL_INTERVAL=100
+EVAL_INTERVAL=1000
 EVAL_EPISODES=10
 
 for seed in ${SEEDS[*]}; do
-	for alpha in ${ALPHAS[*]}; do
-		XLA_PYTHON_CLIENT_MEM_FRACTION=.20 CUDA_VISIBLE_DEVICES="$GPU_ID" python neural/train_evaluation.py \
-		    --alg "$ALG" \
-			--env_name "$ENV" \
-			--proj_name "$PROJ_NAME" \
-			--max_steps 50000 \
-			--divergence "$DIV" \
-			--cost_ub $COST_UB \
-			--config=./neural/configs/mujoco_config.py \
-			--alpha "$alpha" \
-			--eval_interval $EVAL_INTERVAL \
-			--eval_episodes $EVAL_EPISODES \
-			--seed "$seed" \
-			${@:5}
-	done
+# for alpha in ${ALPHAS[*]}; do
+XLA_PYTHON_CLIENT_MEM_FRACTION=.20 CUDA_VISIBLE_DEVICES="$GPU_ID" python neural/train_evaluation.py \
+    --alg "$ALG" \
+    --proj_name $PROJ_NAME \
+    --env_name $ENV \
+    --max_steps 100000 \
+    --divergence "$DIV" \
+    --cost_ub 1000 \
+    --config=./neural/configs/mujoco_config.py \
+    --alpha "$ALPHA" \
+    --eval_interval $EVAL_INTERVAL \
+    --eval_episodes $EVAL_EPISODES \
+    --log_video True \
+    --seed $seed
+# done
 done
+
+
+# ALPHAS=(0.01 0.1 1.0 10.0)
+# SEEDS=(0 1 2)
+
+# GPU_ID="$1"
+# ALG="$2"
+# ENV="$3"
+# DIV="$4"
+# COST_UB=$5
+# PROJ_NAME="$6"
+
+# EVAL_INTERVAL=100
+# EVAL_EPISODES=10
+
+# for seed in ${SEEDS[*]}; do
+# 	for alpha in ${ALPHAS[*]}; do
+# 		XLA_PYTHON_CLIENT_MEM_FRACTION=.20 CUDA_VISIBLE_DEVICES="$GPU_ID" python neural/train_evaluation.py \
+# 		    --alg "$ALG" \
+# 			--env_name "$ENV" \
+# 			--proj_name "$PROJ_NAME" \
+# 			--max_steps 50000 \
+# 			--divergence "$DIV" \
+# 			--cost_ub $COST_UB \
+# 			--config=./neural/configs/mujoco_config.py \
+# 			--alpha "$alpha" \
+# 			--eval_interval $EVAL_INTERVAL \
+# 			--eval_episodes $EVAL_EPISODES \
+# 			--seed "$seed" \
+# 			${@:5}
+# 	done
+# done

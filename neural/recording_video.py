@@ -17,7 +17,7 @@ def recorde_video(
     agent: "Learner",
     env: gym.Env,
     logging_path: str,
-    max_steps: int = 2000,
+    max_steps: int = 1500,
 ):
     os.makedirs(logging_path, exist_ok=True)
 
@@ -26,7 +26,7 @@ def recorde_video(
     for i in range(max_steps):
         observation = np.append(observation, 0) # add absorbing dim
         action = agent.sample_actions(observation, temperature=0.0)
-        env.step(action)
+        observation, reward, done, info = env.step(action)
         frame = env.render('rgb_array').astype(np.uint8)
         frames.append(frame) # for wandb video
         frame = Image.fromarray(frame)

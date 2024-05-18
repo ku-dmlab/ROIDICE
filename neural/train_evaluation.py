@@ -58,14 +58,14 @@ flags.DEFINE_boolean("tqdm", True, "Use tqdm progress bar.")
 flags.DEFINE_float("alpha", 1.0, "temperature")
 flags.DEFINE_float("lr_ratio", 0.01, None)
 flags.DEFINE_float("gradient_penalty_coeff", 1e-5, None)
-flags.DEFINE_float("cost_ub", 0.01, None)
+flags.DEFINE_float("cost_ub", 1.0, None)
 flags.DEFINE_float("initial_lambda", 1.0, None)
 flags.DEFINE_string("ckpt_dir", None, None, required=False)
 flags.DEFINE_string("eval_ckpt_dir", None, None, required=False)
 flags.DEFINE_string(
     "cost_type", "ctrl", "Type of cost value assignment - max/avg/min/ctrl (default: ctrl)"
 )
-flags.DEFINE_float("cost_weight", 1.0, "Weight of cost.")
+flags.DEFINE_float("cost_weight", 0.0001, "Weight of cost.")
 flags.DEFINE_float("cost_lb", 0.1, "Lower bound of cost.")
 
 flags.DEFINE_string("entity", "hy-dmlab", "wandb log entity.")
@@ -123,7 +123,7 @@ def make_env_and_dataset(
             env, env_name, FLAGS.cost_type, FLAGS.cost_weight, FLAGS.cost_lb
         )
     elif isinstance(env_name, NeoRLEnvironmentName):
-        env = wrappers.TradeFeeCost(env, env_name)
+        env = wrappers.TradeFeeCost(env, env_name, FLAGS.cost_weight, FLAGS.cost_lb)
 
     env.seed(seed)
     env.action_space.seed(seed)
@@ -157,7 +157,7 @@ def make_env_and_dataset(
             env, env_name, FLAGS.cost_type, FLAGS.cost_weight, FLAGS.cost_lb
         )
     elif isinstance(env_name, NeoRLEnvironmentName):
-        dataset = ConstrainedNeoRLDataset(env, env_name)
+        dataset = ConstrainedNeoRLDataset(env, env_name, FLAGS.cost_weight, FLAGS.cost_lb)
     else:
         raise NotImplementedError
 
@@ -224,12 +224,11 @@ def main(_):
         tags=[
             env_name,
             alg,
-            # f"COST_WEIGHT{FLAGS.cost_weight}",
-            # f"COST_LB{FLAGS.cost_lb}",
             FLAGS.divergence,
             f"ALPHA{FLAGS.alpha}",
             f"SEED{FLAGS.seed}",
-            f"COST_UB{FLAGS.cost_ub}",
+            f"COST_WEIGHT{FLAGS.cost_weight}",
+            f"COST_LB{FLAGS.cost_lb}",
         ],
         config=kwargs,
         mode="online",
@@ -259,6 +258,7 @@ def main(_):
                     average_discounted_cost,
                     undiscounted_roi,
                     discounted_roi,
+                    episode_lengths,
                 ) = evaluate(env_name, agent, env, FLAGS.eval_episodes)
 
                 wandb.log(
@@ -269,23 +269,23 @@ def main(_):
                         "discounted_cost": average_discounted_cost,
                         "undiscounted_roi": undiscounted_roi,
                         "discounted_roi": discounted_roi,
+                        "episode_lengths": episode_lengths,
                     },
                     i - 1,
                 )
-            
-            # if FLAGS.log_video and i % FLAGS.video_interval == 0:
+
+            # if i == 1 or FLAGS.log_video and i == FLAGS.max_steps:
             #     # logging args
             #     logging_path = os.path.join(
-            #             FLAGS.save_dir,
-            #             f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/log{i}",
-            #         )
-            #     if not isinstance(env_name, NeoRLEnvironmentName):
-            #         recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
+            #         FLAGS.save_dir,
+            #         f"{env_name}/{alg}/alpha{FLAGS.alpha}/cost_ub{FLAGS.cost_ub}/seed{FLAGS.seed}/log{i}",
+            #     )
+            #     recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 
         # agent.save_ckpt(i)
-    else:
-        agent.load_ckpt(Path(FLAGS.ckpt_dir), FLAGS.max_steps)
-        log(f"Loaded checkpoints from {FLAGS.ckpt_dir}")
+    # else:
+    #     agent.load_ckpt(Path(FLAGS.ckpt_dir), FLAGS.max_steps)
+    #     log(f"Loaded checkpoints from {FLAGS.ckpt_dir}")
 
     # Off-policy evaluation
     (
@@ -295,16 +295,16 @@ def main(_):
         average_discounted_cost,
         undiscounted_roi,
         discounted_roi,
+        episode_lengths,
     ) = evaluate(env_name, agent, env, FLAGS.eval_episodes)
 
     # logging args
-    if FLAGS.log_video:
-        logging_path = os.path.join(
-                FLAGS.save_dir,
-                f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/ope/",
-            )
-        if not isinstance(env_name, NeoRLEnvironmentName):
-            recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
+    # if FLAGS.log_video:
+    #     logging_path = os.path.join(
+    #         FLAGS.save_dir,
+    #         f"{env_name}/{alg}/alpha{FLAGS.alpha}/cost_ub{FLAGS.cost_ub}/seed{FLAGS.seed}/ope/",
+    #     )
+    #     recorde_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 
     # logging
     # tqdm.write(
@@ -329,6 +329,7 @@ def main(_):
             "off_policy_eval/discounted_cost": average_discounted_cost,
             "off_policy_eval/undiscounted_roi": undiscounted_roi,
             "off_policy_eval/discounted_roi": discounted_roi,
+            "off_policy_eval/episode_legnth": episode_lengths
         }
     )
 

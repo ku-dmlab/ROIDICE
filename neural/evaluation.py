@@ -26,6 +26,7 @@ def evaluate(
     discounted_total_cost_ = []
     discounted_total_reward_ = []
     discounted_total_roi_ = []
+    episode_lengths = []
     for i in range(num_episodes):
         observation: np.ndarray = env.reset()  # type: ignore
         done = False
@@ -66,10 +67,12 @@ def evaluate(
         total_cost_.append(total_cost)
         discounted_total_cost_.append(discounted_total_cost)
 
+        episode_lengths.append(cnt)
+
     average_return = np.array(total_reward_).mean()
     average_discounted_return = np.array(discounted_total_reward_).mean()
 
-    # if isinstance(env_name, GymEnvironmentName):
+    # if isinstance(env_name, MujocoEnvironmentName):
         # normalized_return = d4rl.get_normalized_score(env_name, average_return) * 100
     # else:
     average_undiscounted_cost = np.array(total_cost_).mean()
@@ -78,6 +81,8 @@ def evaluate(
     average_undiscounted_roi = np.array(total_roi_).mean()
     average_discounted_roi = np.array(discounted_total_roi_).mean()
 
+    average_episode_lenghts = np.array(episode_lengths).mean()
+
     return (
         average_return,
         average_discounted_return,
@@ -85,4 +90,5 @@ def evaluate(
         average_discounted_cost,
         average_undiscounted_roi,
         average_discounted_roi,
+        average_episode_lenghts
     )

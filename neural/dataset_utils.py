@@ -20,6 +20,7 @@ from tqdm import tqdm
 from common import Batch, ConstrainedBatch
 from environment import MazeEnvironmentName, MujocoEnvironmentName
 
+
 def split_into_trajectories(
     observations,
     actions,
@@ -303,11 +304,8 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
         if isinstance(env_name, MazeEnvironmentName):
             # cost assignment
             costs = np.sum(dataset["actions"] ** 2, axis=1)
-            pure_rewards = dataset["rewards"] # sparse
+            pure_rewards = dataset["rewards"]  # sparse
         elif isinstance(env_name, MujocoEnvironmentName):
-            # cost assignment
-            costs = np.sum(dataset["actions"] ** 2, axis=1)
-
             # add ctrl_cost
             if "half" in env_name:
                 ctrl_cost_weight = 0.1
@@ -315,13 +313,13 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
             else:  # hopper, walker2d
                 ctrl_cost_weight = 0.001
                 healty_reward = 1.0
-            ctrl_cost = ctrl_cost_weight * costs
+            ctrl_cost = ctrl_cost_weight * np.sum(dataset["actions"] ** 2, axis=1)
             pure_rewards = dataset["rewards"] - healty_reward + ctrl_cost  # forward_reward
         else:
             raise NotImplementedError
 
         # set cost func
-        affine_costs = cost_weight * costs + cost_lb
+        affine_costs = cost_weight * np.mean(dataset["actions"] ** 2, axis=1) + cost_lb
 
         # absorbing state
         absorbing_dim = np.zeros(len(dataset["observations"]))
@@ -370,7 +368,7 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
             d_tmp = np.append(np.zeros_like(dones_float[s : t + 1]), np.array([0.0, 1.0]))
             dones = np.append(dones, d_tmp)
             s = t + 1
-            
+
         observations = observations.reshape(-1, o_d)
         next_observations = next_observations.reshape(-1, o_d)
         actions = actions.reshape(-1, a_d)
@@ -552,8 +550,17 @@ class Log:
         if self.csv_file is not None:
             self.csv_file.close()
 
+
 class ConstrainedNeoRLDataset(ConstrainedDatasets):
-    def __init__(self, env, env_name, eps=1e-3):
+    def __init__(
+        self,
+        env: gym.Env,
+        env_name: str,
+        cost_weight: float,
+        cost_lb: float,
+        state_normalize: bool = True,
+        eps: float = 1e-10,
+    ):
         name, data_type, train_num = env_name.split("-")
         dataset, _ = env.get_dataset(data_type=data_type, train_num=int(train_num))
 
@@ -571,12 +578,25 @@ class ConstrainedNeoRLDataset(ConstrainedDatasets):
             _next_observations = np.concatenate(
                 (dataset["next_obs"], absorbing_dim[:, np.newaxis]), axis=1
             )
+
+            # state normalize
+            if state_normalize:
+                _observations = (_observations - np.mean(_observations, axis=0)) / (
+                    np.std(_observations, axis=0) + eps
+                )
+                _next_observations = (_next_observations - np.mean(_next_observations, axis=0)) / (
+                    np.std(_next_observations, axis=0) + eps
+                )
+
             _, o_d = _observations.shape
             _, a_d = dataset["action"].shape
+
+            absorbing_action = np.zeros(a_d)
+
             initial_observations = _observations[terminal_indexes[:-1] + 1]
 
             _rewards = dataset["reward"].reshape(-1)
-            _rewards *= 10000 # invalidate reward scaling
+            # _rewards *= 10000 # invalidate reward scaling
 
             observations = np.array([])
             next_observations = np.array([])
@@ -607,8 +627,10 @@ class ConstrainedNeoRLDataset(ConstrainedDatasets):
                 a_tmp = np.vstack(
                     (
                         dataset["action"][t * _episode_length : (t + 1) * _episode_length],
-                        dataset["action"][(t + 1) * _episode_length - 1],
-                        dataset["action"][(t + 1) * _episode_length - 1],
+                        # dataset["action"][(t + 1) * _episode_length - 1],
+                        # dataset["action"][(t + 1) * _episode_length - 1],
+                        absorbing_action,
+                        absorbing_action,
                     )
                 )
                 actions = np.append(actions, a_tmp)
@@ -639,7 +661,8 @@ class ConstrainedNeoRLDataset(ConstrainedDatasets):
                 * np.minimum(abs(_actions), observations[:, _stock_dim + 1 : 2 * _stock_dim + 1])
             )[sell_mask]
             # transaction fee - buy
-            buy_mask = np.logical_not(sell_mask)
+            # buy_mask = np.logical_not(sell_mask)
+            buy_mask = _actions > 0.0
             balance = np.repeat(observations[:, 0][np.newaxis,], _stock_dim, axis=0).transpose()
             available_amount = balance // observations[:, 1 : _stock_dim + 1]
             _costs[buy_mask] = (
@@ -649,8 +672,8 @@ class ConstrainedNeoRLDataset(ConstrainedDatasets):
             )[buy_mask]
 
             costs = np.sum(_costs, axis=1)
-            costs[dones_mask] = eps
-            costs[dones_mask - 1] = eps
+            # costs = np.mean(_costs, axis=1)
+            costs = cost_weight * costs + cost_lb
 
             assert costs.shape == rewards.shape == dones.shape
             assert observations.shape == next_observations.shape
