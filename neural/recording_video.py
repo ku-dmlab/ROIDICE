@@ -12,7 +12,7 @@ from environment import EnvironmentName
 if typing.TYPE_CHECKING:
     from learner import Learner
 
-def recorde_video(
+def record_video(
     env_name: EnvironmentName,
     agent: "Learner",
     env: gym.Env,
@@ -32,5 +32,5 @@ def recorde_video(
         frame = Image.fromarray(frame)
         frame.save(os.path.join(logging_path, f"step{i:04d}.png"))
 
-    frames = np.transpose(np.array(frames), (0, 3, 1, 2)) # (t, c, h, w)
-    wandb.log({f"video/{env_name}": wandb.Video(frames, fps=16)})
+    # frames = np.transpose(np.array(frames), (0, 3, 1, 2)) # (t, c, h, w)
+    # wandb.log({f"video/{env_name}": wandb.Video(frames, fps=16)})

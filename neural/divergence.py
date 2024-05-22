@@ -49,7 +49,6 @@ def f(x: ArrayLike, f_divergence: FDivergence, t: float = 1.0, eps: float = 1e-1
             return (x - t) ** 2 / 2
         case FDivergence.SOFT_CHI_T:
             return jnp.where(x < t, (x / t) * jnp.log(x / t + eps) - (x / t) + 1, (x - t) ** 2 / 2)
-            # return jnp.where(x < t,  (x - t + 1) * jnp.log(x - t + 1 + eps) - (x - t), (x - t) ** 2 / 2)
         case _:
             assert_never(f_divergence)
 
@@ -88,7 +87,6 @@ def f_derivative_inverse(y: ArrayLike, f_divergence: FDivergence, t: float = 1.0
             return y + t
         case FDivergence.SOFT_CHI_T:
             return jnp.where(y < 0.0, t * jnp.exp(jnp.where(t * y < 0.0, t * y, 0.0)), y + t)
-            # return jnp.where(y < 0.0, jnp.exp(jnp.where(y < 0.0, y, 0.0)) + t - 1, y + t)
         case _:
             assert_never(f_divergence)
 

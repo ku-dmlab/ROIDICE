@@ -46,7 +46,7 @@ class ValueCritic(nn.Module):
             dropout_rate=self.dropout_rate,
         )(observations)
         return jnp.squeeze(critic, -1)
-
+    
 
 class Critic(nn.Module):
     hidden_dims: Sequence[int]

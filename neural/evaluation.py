@@ -19,7 +19,6 @@ def evaluate(
     discount: float = 0.99,
     max_step: int = 1000,
 ) -> tuple[float, float, float, float]:
-    # stats = {'return': [], 'length': []}
     total_cost_ = []
     total_reward_ = []
     total_roi_ = []
@@ -37,12 +36,8 @@ def evaluate(
         cumulated_discount = 1
         cnt = 0
         while not done and cnt < max_step:
-        # while cnt < max_step:
             observation = np.append(observation, 0) # add absorbing dim
             action = agent.sample_actions(observation, temperature=0.0)
-            if np.isnan(action).any():
-                print(f"\nep: {i}, action: {action}")
-                exit(0)
             observation, reward, done, info = env.step(action)
             total_reward += reward
             discounted_total_reward += cumulated_discount * reward
@@ -69,9 +64,6 @@ def evaluate(
     average_return = np.array(total_reward_).mean()
     average_discounted_return = np.array(discounted_total_reward_).mean()
 
-    # if isinstance(env_name, MujocoEnvironmentName):
-        # normalized_return = d4rl.get_normalized_score(env_name, average_return) * 100
-    # else:
     average_undiscounted_cost = np.array(total_cost_).mean()
     average_discounted_cost = np.array(discounted_total_cost_).mean()
 

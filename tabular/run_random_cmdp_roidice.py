@@ -43,25 +43,7 @@ red = "\x1b[31;20m"
 bold_red = "\x1b[31;1m"
 reset = "\x1b[0m"
 
-keys = [
-    # "true_uopt_r", "true_uopt_c", "true_uopt_roi",
-    # "true_roi_inf_r", "true_roi_inf_c", "true_roi_inf_roi",
-    "true_behav_r", "true_behav_c", "true_behav_roi",
-    # "uopt_r", "uopt_c", "uopt_roi",
-    # "roi_inf_wo_reg_r", "roi_inf_wo_reg_c", "roi_inf_wo_reg_roi",
-    "odice_r", "odice_c", "odice_roi",
-    "roi_inf_r", "roi_inf_c", "roi_inf_roi",
-    # "roi_r", "roi_c", "roi_roi",
-    "cdice_r", "cdice_c", "cdice_roi",
-    "mle_odice_r", "mle_odice_c", "mle_odice_roi",
-    "mle_roi_inf_r", "mle_roi_inf_c", "mle_roi_inf_roi",
-    "mle_cdice_r", "mle_cdice_c", "mle_cdice_roi",
-    "seed", "num_trajectories", "cost_multiplier", "t"
-]
-
 def main(unused_argv):
-    os.makedirs("./results/tabular", exist_ok=True)
-
     """Main function."""
     num_states, num_actions, num_costs, gamma = 50, 4, 1, 0.95
     behavior_optimality = FLAGS.behavior_optimality
@@ -70,46 +52,21 @@ def main(unused_argv):
     logging.info("Behavior optimality: %g", behavior_optimality)
     logging.info("==============================")
 
-    # alphas = [0.001, 0.01, 0.1, 1.0]
-    # alphas = [10.0, 100.0]
     cost_multipliers = [0.7, 0.9, 1.0, 1.1, 1.3]
 
-    results = {k: np.array([]) for k in keys}
-
-    f = open("./results/infeasible_seeds.txt", "w")
-
     for seed in range(FLAGS.num_iterations):
-    # for seed in [5, 155, 163, 224, 240, 347, 405, 462, 518, 559, 651, 658, 686, 692, 698, 298, 711, 716, 735, 744, 791, 829, 914, 940, 977]:
         # Construct a random CMDP
         np.random.seed(seed)
         cmdp = mdp_util.generate_random_cmdp(num_states, num_actions, num_costs, gamma)
 
-        # Optimal policy for unconstrained MDP
-        # pi_uopt, _, _ = mdp_util.solve_mdp(cmdp)
-        # v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi_uopt)
-        # true_uopt_r, true_uopt_c = v_r[0], v_c[0][0]
-        # true_uopt_roi = true_uopt_r / true_uopt_c
-
+        # Behavior policy
         pi_b = offline_cmdp.generate_baseline_policy(cmdp, optimality=behavior_optimality)
-        # pi, _, _ = offline_cmdp.roidice_max_roi_mosek_inf(cmdp, pi_b, alpha=0.0)
-        # if pi is None:
-        #     f.write(f"inf seed: {seed}\n")
-        #     continue
-        # v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi)
-        # true_roi_inf_r, true_roi_inf_c = v_r[0], v_c[0][0]
-        # true_roi_inf_roi = true_roi_inf_r / true_roi_inf_c
         
         v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi_b)
         true_behav_r, true_behav_c = v_r[0], v_c[0][0]
         true_behav_roi = true_behav_r / true_behav_c
 
-        tmp = []
-        is_ok = True
         for num_trajectories in [10, 20, 50, 100, 1000, 2000]:
-            if not is_ok:
-                logging.info(red + "Is not OK :(" + reset)
-                break
-
             logging.info("==========================")
             logging.info("* seed=%d, num_trajectories=%d", seed, num_trajectories)
             # Generate trajectory
@@ -120,32 +77,13 @@ def main(unused_argv):
                 num_states, num_actions, num_costs, cmdp.reward, cmdp.costs, gamma, trajectory
             )
 
-            # pi_uopt, _, _ = mdp_util.solve_mdp(mle_cmdp)
-            # v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi_uopt)
-            # uopt_r, uopt_c = v_r[0], v_c[0][0]
-            # uopt_roi = uopt_r / uopt_c
-
-            # pi, _, _ = offline_cmdp.roidice_max_roi_mosek_inf(mle_cmdp, pi_b, alpha=0.0) # seed 112
-            # if pi is None:
-            #     f.write(f"mle inf seed: {seed}\n")
-            #     continue
-            # v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi)
-            # roi_inf_wo_reg_r, roi_inf_wo_reg_c = v_r[0], v_c[0][0]
-            # roi_inf_wo_reg_roi = roi_inf_wo_reg_r / roi_inf_wo_reg_c
-
-            # for alpha in alphas:
-            # alpha = 1 / num_trajectories
-            alpha = 0.01
+            alpha = 1 / num_trajectories
 
             # ROIDICE
             logging.info(yellow + f"* seed={seed}, alpha={alpha}" + reset)
             pi, _, _, t = offline_cmdp.roidice_max_roi_mosek_inf(mle_cmdp, pi_b, alpha=alpha) # seed 189, alpha 0.001
             t = t[0]
-            if pi is None:
-                f.write(f"mle inf alpha{alpha} seed: {seed}\n")
-                logging.info(red + "roi_inf pi is None" + reset)
-                is_ok = False
-                break
+
             v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi)
             roi_inf_r, roi_inf_c = v_r[0], v_c[0][0]
             roi_inf_roi = roi_inf_r / roi_inf_c
@@ -154,7 +92,7 @@ def main(unused_argv):
             mle_roi_inf_r, mle_roi_inf_c = v_r[0], v_c[0][0]
             mle_roi_inf_roi = mle_roi_inf_r / mle_roi_inf_c
 
-            # alpha = alpha * (t**2)
+            alpha = alpha * (t**2)
 
             # OptiDICE
             _, _, pi, _ = offline_cmdp.optidice(mle_cmdp, pi_b, alpha)
@@ -172,21 +110,15 @@ def main(unused_argv):
             for cost_multiplier in cost_multipliers:
                 logging.info(yellow + f"* seed={seed}, alpha={alpha}, cost_threshold={cost_threshold}, cost_multiplier={cost_multiplier}" + reset)
                 mle_cmdp.cost_thresholds = cost_threshold * cost_multiplier
-                # pi, _, _ = offline_cmdp.roidice_max_roi_mosek(mle_cmdp, pi_b, alpha=alpha)
-                # if pi is None:
-                #     f.write(f"mle alpha{alpha} seed: {seed} cost_multiplier: {cost_multiplier}\n")
-                #     continue
-                # v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi)
-                # roi_r, roi_c = v_r[0], v_c[0][0]
-                # roi_roi = roi_r / roi_c
 
                 # COptiDICE
                 pi, _, _ = offline_cmdp.constrained_optidice(mle_cmdp, pi_b, alpha=alpha)
-                if pi is None:
-                    f.write(f"mle cdice alpha{alpha} seed: {seed} cost_multiplier: {cost_multiplier}\n")
-                    logging.info(red + "cdice pi is None" + reset)
-                    is_ok = False
-                    break
+                _cost_multiplier = cost_multiplier
+                while pi is None:
+                    _cost_multiplier = _cost_multiplier + 0.1
+                    mle_cmdp.cost_thresholds = cost_threshold * _cost_multiplier
+                    pi, _, _ = offline_cmdp.constrained_optidice(mle_cmdp, pi_b, alpha=alpha)
+
                 v_r, _, v_c, _ = mdp_util.policy_evaluation(cmdp, pi)
                 cdice_r, cdice_c = v_r[0], v_c[0][0]
                 cdice_roi = cdice_r / cdice_c
@@ -194,32 +126,6 @@ def main(unused_argv):
                 v_r, _, v_c, _ = mdp_util.policy_evaluation(mle_cmdp, pi)
                 mle_cdice_r, mle_cdice_c = v_r[0], v_c[0][0]
                 mle_cdice_roi = mle_cdice_r / mle_cdice_c
-
-                save = []
-                save += [true_behav_r, true_behav_c, true_behav_roi]
-                save += [odice_r, odice_c, odice_roi]
-                save += [roi_inf_r, roi_inf_c, roi_inf_roi]
-                save += [cdice_r, cdice_c, cdice_roi]
-                save += [mle_odice_r, mle_odice_c, mle_odice_roi]
-                save += [mle_roi_inf_r, mle_roi_inf_c, mle_roi_inf_roi]
-                save += [mle_cdice_r, mle_cdice_c, mle_cdice_roi]
-
-                save += [seed, num_trajectories, cost_multiplier, t]
-                tmp.append(save)
-                # indices.append(f"seed{seed}_alpha{alpha}_cost_multiplier{cost_multiplier}")
-
-        if is_ok:
-            tmp = np.array(tmp)
-            for idx, key in enumerate(keys):
-                results[key] = np.concatenate((results[key], tmp[:, idx]))
-
-    df = pd.DataFrame.from_dict(results)
-    # df.index = indices
-    # df.to_csv("./test.csv")
-    df.to_csv(f"./results/tabular/roidice_seed{FLAGS.num_iterations}_num_trajectories_fix_alpha.csv")
-    logging.info(yellow + "=> SAVE!!!" + reset)
-
-    f.close()
 
 if __name__ == "__main__":
     app.run(main)

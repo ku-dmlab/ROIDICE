@@ -18,7 +18,6 @@ from gym.spaces import Box
 from tqdm import tqdm
 
 from common import Batch, ConstrainedBatch
-from environment import MazeEnvironmentName, MujocoEnvironmentName
 
 def split_into_trajectories(
     observations,
@@ -298,24 +297,16 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
         # Extract initial observations.
         (terminal_indexes,) = np.where(dones_float == 1.0)  # noqa: E712
         terminal_indexes = np.insert(terminal_indexes, 0, -1)[:-1]
-        # initial_observations = dataset["observations"][terminal_indexes + 1]  # type: ignore
 
-        if isinstance(env_name, MazeEnvironmentName):
-            # cost assignment
-            costs = np.sum(dataset["actions"] ** 2, axis=1)
-            pure_rewards = dataset["rewards"] # sparse
-        elif isinstance(env_name, MujocoEnvironmentName):
-            # add ctrl_cost
-            if "half" in env_name:
-                ctrl_cost_weight = 0.1
-                healty_reward = 0.0
-            else:  # hopper, walker2d
-                ctrl_cost_weight = 0.001
-                healty_reward = 1.0
-            ctrl_cost = ctrl_cost_weight * np.sum(dataset["actions"] ** 2, axis=1)
-            pure_rewards = dataset["rewards"] - healty_reward + ctrl_cost  # forward_reward
-        else:
-            raise NotImplementedError
+        # add ctrl_cost
+        if "half" in env_name:
+            ctrl_cost_weight = 0.1
+            healty_reward = 0.0
+        else:  # hopper, walker2d
+            ctrl_cost_weight = 0.001
+            healty_reward = 1.0
+        ctrl_cost = ctrl_cost_weight * np.sum(dataset["actions"] ** 2, axis=1)
+        pure_rewards = dataset["rewards"] - healty_reward + ctrl_cost  # forward_reward
 
         # set cost func
         affine_costs = cost_weight * np.mean(dataset["actions"] ** 2, axis=1) + cost_lb
@@ -397,28 +388,6 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
             initial_observations=initial_observations.astype(np.float32),
             size=len(observations),
             costs=costs,
-        )
-
-
-class SafetyGymDataset(ConstrainedDatasets):
-    def __init__(
-        self,
-        dataset_fname: Path,
-    ):
-        with open(dataset_fname, "rb") as fp:
-            dataset = pickle.load(fp)
-
-        super().__init__(
-            dataset["observations"].astype(np.float32),
-            actions=dataset["actions"].astype(np.float32),
-            rewards=dataset["rewards"].astype(np.float32),
-            masks=1.0 - dataset["terminateds"].astype(np.float32),
-            dones_float=dataset["terminateds"].astype(np.float32),
-            next_observations=dataset["next_observations"].astype(np.float32),
-            timesteps=dataset["timesteps"].astype(np.float32),
-            initial_observations=dataset["initial_observations"].astype(np.float32),
-            costs=dataset["costs"],
-            size=len(dataset["observations"]),
         )
 
 
@@ -548,3 +517,142 @@ class Log:
         self.txt_file.close()
         if self.csv_file is not None:
             self.csv_file.close()
+
+class ConstrainedFinanceDataset(ConstrainedDatasets):
+    def __init__(
+        self,
+        env: gym.Env,
+        env_name: str,
+        reward_scale: float,
+        cost_weight: float,
+        cost_lb: float,
+        state_normalize: bool = True,
+        eps: float = 1e-10,
+    ):
+        name, data_type, train_num = env_name.split("-")
+        dataset, _ = env.get_dataset(data_type=data_type, train_num=int(train_num))
+
+        _episode_length = 2516
+        _hmax = 100
+        _stock_dim = 30
+        _transaction_cost_pct = 0.001
+
+        terminal_indexes = np.where(dataset["done"] == 1.0)[0]
+
+        # absorbing state
+        absorbing_dim = np.zeros(len(dataset["obs"]))
+        _observations = np.concatenate((dataset["obs"], absorbing_dim[:, np.newaxis]), axis=1)
+        _next_observations = np.concatenate(
+            (dataset["next_obs"], absorbing_dim[:, np.newaxis]), axis=1
+        )
+
+        # state normalize
+        if state_normalize:
+            _observations = (_observations - np.mean(_observations, axis=0)) / (
+                np.std(_observations, axis=0) + eps
+            )
+            _next_observations = (_next_observations - np.mean(_next_observations, axis=0)) / (
+                np.std(_next_observations, axis=0) + eps
+            )
+
+        _, o_d = _observations.shape
+        _, a_d = dataset["action"].shape
+
+        absorbing_action = np.zeros(a_d)
+
+        initial_observations = _observations[terminal_indexes[:-1] + 1]
+
+        _rewards = dataset["reward"].reshape(-1)
+        _rewards = _rewards * reward_scale
+
+        observations = np.array([])
+        next_observations = np.array([])
+        actions = np.array([])
+        rewards = np.array([])
+        for t in tqdm(range(int(train_num))):
+            # observations
+            obs_tmp = np.vstack(
+                (
+                    _observations[t * _episode_length : (t + 1) * _episode_length],
+                    _next_observations[(t + 1) * _episode_length - 1],
+                    _next_observations[(t + 1) * _episode_length - 1],
+                )
+            )
+            obs_tmp[-1, -1] = 1
+            observations = np.append(observations, obs_tmp)
+            # next_observations
+            next_obs_tmp = np.vstack(
+                (
+                    _next_observations[t * _episode_length : (t + 1) * _episode_length],
+                    _next_observations[(t + 1) * _episode_length - 1],
+                    _next_observations[(t + 1) * _episode_length - 1],
+                )
+            )
+            next_obs_tmp[-2:, -1] = 1
+            next_observations = np.append(next_observations, next_obs_tmp)
+            # actions
+            a_tmp = np.vstack(
+                (
+                    dataset["action"][t * _episode_length : (t + 1) * _episode_length],
+                    absorbing_action,
+                    absorbing_action,
+                )
+            )
+            actions = np.append(actions, a_tmp)
+            # rewards
+            r_tmp = np.append(
+                _rewards[t * _episode_length : (t + 1) * _episode_length], np.zeros(2)
+            )
+            rewards = np.append(rewards, r_tmp)
+
+        observations = observations.reshape(-1, o_d)
+        next_observations = next_observations.reshape(-1, o_d)
+        actions = actions.reshape(-1, a_d)
+        rewards = rewards.reshape(-1)
+
+        # dones
+        dones_mask = np.arange(0, (_episode_length + 2) * 100 + 1, _episode_length + 2)
+        dones_mask = dones_mask[1:] - 1
+        dones = np.zeros_like(rewards)
+        dones[dones_mask] = 1
+
+        # cost function
+        _actions = _hmax * actions
+        _costs = np.zeros_like(actions)
+        # transaction fee - sell
+        sell_mask = _actions < 0.0
+        _costs[sell_mask] = (
+            observations[:, 1 : _stock_dim + 1]
+            * np.minimum(abs(_actions), observations[:, _stock_dim + 1 : 2 * _stock_dim + 1])
+        )[sell_mask]
+        # transaction fee - buy
+        buy_mask = _actions > 0.0
+        balance = np.repeat(observations[:, 0][np.newaxis,], _stock_dim, axis=0).transpose()
+        available_amount = balance // observations[:, 1 : _stock_dim + 1]
+        _costs[buy_mask] = (
+            observations[:, 1 : _stock_dim + 1]
+            * np.minimum(available_amount, _actions)
+            * _transaction_cost_pct
+        )[buy_mask]
+
+        costs = np.sum(_costs, axis=1)
+        costs = cost_weight * costs + cost_lb
+
+        assert costs.shape == rewards.shape == dones.shape
+        assert observations.shape == next_observations.shape
+        assert len(rewards) == len(observations) == len(actions)
+
+        timestep = np.tile(np.arange(_episode_length + 2), 100)
+
+        super().__init__(
+            observations=observations.astype(np.float32),
+            actions=actions.astype(np.float32),
+            rewards=rewards,
+            masks=1.0 - dones.astype(np.float32),
+            dones_float=dones.astype(np.float32),
+            next_observations=next_observations.astype(np.float32),
+            timesteps=timestep.astype(np.int64),
+            initial_observations=initial_observations.astype(np.float32),
+            size=len(rewards),
+            costs=costs,
+        )

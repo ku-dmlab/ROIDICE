@@ -3,26 +3,15 @@ import numpy as np
 from environment import MazeEnvironmentName, MujocoEnvironmentName
 
 class ActionRelevantCost(gym.Wrapper):
-    def __init__(self, env, env_name, option, cost_weight, cost_lb, eps=1e-5):
+    def __init__(self, env, env_name, cost_weight, cost_lb, eps=1e-5):
         super().__init__(env)
         self._eps = eps
         self._env_name = env_name
-        self._option = option
         self._cost_weight = cost_weight
         self._cost_lb = cost_lb
 
     def step(self, action):
         obs, rewards, done, info = super().step(action)
-        if self._option == "max":
-            info['cost'] = np.max(abs(action)) + self._eps
-        elif self._option == "avg":
-            info['cost'] = np.mean(abs(action)) + self._eps
-        elif self._option == "min":
-            info['cost'] = np.min(abs(action)) + self._eps
-        elif self._option == "ctrl":
-            info['cost'] = np.sum(action ** 2)     
-        else:
-            raise NotImplementedError
 
         if isinstance(self._env_name, MazeEnvironmentName):
             pure_rewards = rewards
@@ -44,12 +33,19 @@ class ActionRelevantCost(gym.Wrapper):
         
         return obs, pure_rewards, done, info
 
-class CostLowerBound(gym.Wrapper):
-    def __init__(self, env, eps=1e-5):
+class TradeFeeCost(gym.Wrapper):
+    def __init__(self, env, env_name, reward_scale, cost_weight, cost_lb):
         super().__init__(env)
-        self._eps = eps
+        self._env_name = env_name
+        self._reward_scale = reward_scale
+        self._cost_weight = cost_weight
+        self._cost_lb = cost_lb
 
     def step(self, action):
-        obs, rewards, done, info = super().step(action)
-        info['cost'] += self._eps
-        return obs, rewards, done, info
+        obs, reward, done, info = super().step(action)
+
+        # set reward func
+        reward = self._reward_scale * reward
+        info['cost'] = self._cost_weight * self.env.cost + self._cost_lb
+
+        return obs, reward, done, info
