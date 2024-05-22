@@ -1,10 +1,11 @@
+import os
 import typing
 
 import d4rl
 import gym
 import numpy as np
 
-from environment import EnvironmentName, GymEnvironmentName, SafetyGymEnvironmentName
+from environment import EnvironmentName
 
 if typing.TYPE_CHECKING:
     from learner import Learner
@@ -16,15 +17,15 @@ def evaluate(
     env: gym.Env,
     num_episodes: int,
     discount: float = 0.99,
+    max_step: int = 1000,
 ) -> tuple[float, float, float, float]:
-    # stats = {'return': [], 'length': []}
     total_cost_ = []
     total_reward_ = []
     total_roi_ = []
     discounted_total_cost_ = []
     discounted_total_reward_ = []
     discounted_total_roi_ = []
-    for _ in range(num_episodes):
+    for i in range(num_episodes):
         observation: np.ndarray = env.reset()  # type: ignore
         done = False
 
@@ -33,37 +34,36 @@ def evaluate(
         total_cost = 0.0
         discounted_total_cost = 0.0
         cumulated_discount = 1
-        while not done:
+        cnt = 0
+        while not done and cnt < max_step:
+            observation = np.append(observation, 0) # add absorbing dim
             action = agent.sample_actions(observation, temperature=0.0)
             observation, reward, done, info = env.step(action)
             total_reward += reward
             discounted_total_reward += cumulated_discount * reward
-            if isinstance(env_name, SafetyGymEnvironmentName):
-                total_cost += info["cost"]
-                discounted_total_cost += cumulated_discount * info["cost"]
+            total_cost += info["cost"]
+            discounted_total_cost += cumulated_discount * info["cost"]
             cumulated_discount *= discount
+            cnt += 1
 
         # compute roi = r / c
-        # assert total_cost != 0.0, f"Err: Division by Zero (total_cost: {total_cost})"
-        # total_roi_.append(total_reward / total_cost)
-        # assert (
-        #     discounted_total_cost != 0.0
-        # ), f"Err: Division by Zero (discounted_total_cost: {discounted_total_cost})"
-        # discounted_total_roi_.append(discounted_total_reward / discounted_total_cost)
+        assert total_cost != 0.0, f"Err: Division by Zero (total_cost: {total_cost})"
+        if total_cost != 0.0:
+            total_roi_.append(total_reward / total_cost)
+        assert (
+            discounted_total_cost != 0.0
+        ), f"Err: Division by Zero (discounted_total_cost: {discounted_total_cost})"
+        if discounted_total_cost != 0.0:
+            discounted_total_roi_.append(discounted_total_reward / discounted_total_cost)
 
         total_reward_.append(total_reward)
         discounted_total_reward_.append(discounted_total_reward)
-        if isinstance(env_name, SafetyGymEnvironmentName):
-            total_cost_.append(total_cost)
-            discounted_total_cost_.append(discounted_total_cost)
+        total_cost_.append(total_cost)
+        discounted_total_cost_.append(discounted_total_cost)
 
     average_return = np.array(total_reward_).mean()
     average_discounted_return = np.array(discounted_total_reward_).mean()
 
-    if isinstance(env_name, GymEnvironmentName):
-        normalized_return = d4rl.get_normalized_score(env_name, average_return) * 100
-    else:
-        normalized_return = average_return
     average_undiscounted_cost = np.array(total_cost_).mean()
     average_discounted_cost = np.array(discounted_total_cost_).mean()
 
@@ -71,7 +71,7 @@ def evaluate(
     average_discounted_roi = np.array(discounted_total_roi_).mean()
 
     return (
-        normalized_return,
+        average_return,
         average_discounted_return,
         average_undiscounted_cost,
         average_discounted_cost,

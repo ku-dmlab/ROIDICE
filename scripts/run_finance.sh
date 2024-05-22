@@ -15,6 +15,6 @@ XLA_PYTHON_CLIENT_MEM_FRACTION=.20 CUDA_VISIBLE_DEVICES="$GPU_ID" python neural/
 	--proj_name "$PROJ_NAME" \
 	--max_steps 100000 \
 	--divergence "$DIV" \
-	--config=./neural/configs/mujoco_config.py \
+	--config=./neural/configs/finance_config.py \
 	--eval_interval $EVAL_INTERVAL \
 	--eval_episodes $EVAL_EPISODES

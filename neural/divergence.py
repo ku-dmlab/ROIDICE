@@ -13,9 +13,11 @@ class FDivergence(str, Enum):
     CHI = "Chi"
     SOFT_CHI = "SoftChi"
     DUAL_DICE = "DualDICE"
+    CHI_T = "ChiT"
+    SOFT_CHI_T = "SoftChiT"
 
 
-def f(x: ArrayLike, f_divergence: FDivergence, eps: float = 1e-10) -> Array:
+def f(x: ArrayLike, f_divergence: FDivergence, t: float = 1.0, eps: float = 1e-10) -> Array:
     """Compute f-function of f-Divergence.
 
     Args:
@@ -43,11 +45,15 @@ def f(x: ArrayLike, f_divergence: FDivergence, eps: float = 1e-10) -> Array:
             return jnp.where(x < 1.0, x * jnp.log(x + eps) - x + 1, (x - 1) ** 2 / 2)
         case FDivergence.DUAL_DICE:
             return 2 / 3 * jnp.abs(x) ** (3 / 2)
+        case FDivergence.CHI_T:
+            return (x - t) ** 2 / 2
+        case FDivergence.SOFT_CHI_T:
+            return jnp.where(x < t, (x / t) * jnp.log(x / t + eps) - (x / t) + 1, (x - t) ** 2 / 2)
         case _:
             assert_never(f_divergence)
 
 
-def f_derivative_inverse(y: ArrayLike, f_divergence: FDivergence):
+def f_derivative_inverse(y: ArrayLike, f_divergence: FDivergence, t: float = 1.0):
     """Compute (f')^-1 of f-function of f-Divergence.
 
     This function is required when computing convex conjugate of f-function.
@@ -77,6 +83,10 @@ def f_derivative_inverse(y: ArrayLike, f_divergence: FDivergence):
             return jnp.where(y < 0.0, jnp.exp(jnp.where(y < 0.0, y, 0.0)), y + 1)
         case FDivergence.DUAL_DICE:
             raise ValueError(f"This funtion doesn't exist for {f_divergence}.")
+        case FDivergence.CHI_T:
+            return y + t
+        case FDivergence.SOFT_CHI_T:
+            return jnp.where(y < 0.0, t * jnp.exp(jnp.where(t * y < 0.0, t * y, 0.0)), y + t)
         case _:
             assert_never(f_divergence)
 
@@ -111,6 +121,8 @@ def f_conjugate(y: ArrayLike, f_divergence: FDivergence) -> Array:
             )
         case FDivergence.DUAL_DICE:
             return jnp.abs(y) ** 3 / 3
+        case FDivergence.SOFT_CHI_T:
+            raise NotImplementedError
         case _:
             assert_never(f_divergence)
 
@@ -146,7 +158,7 @@ def policy_ratio(
             # not actually called, it will cause problem. To avoid this, we use jnp.where twice.
             # Ref.: https://github.com/tensorflow/probability/blob/main/discussion/where-nan.pdf
             return jnp.where(x > 0, x + 1, jnp.exp(jnp.where(x <= 0.0, x, 0.0)))
-        case FDivergence.KL | FDivergence.DUAL_DICE:
+        case FDivergence.KL | FDivergence.DUAL_DICE | FDivergence.SOFT_CHI_T:
             raise NotImplementedError(
                 f"This funtion isn't implemented for {f_divergence}."
             )
@@ -200,7 +212,7 @@ def state_ratio(
                 advantage + 1,
                 jnp.exp(jnp.where(advantage <= 0.0, advantage, 0.0)),
             )
-        case FDivergence.KL | FDivergence.DUAL_DICE:
+        case FDivergence.KL | FDivergence.DUAL_DICE | FDivergence.SOFT_CHI_T:
             raise NotImplementedError(
                 f"This funtion isn't implemented for {f_divergence}."
             )
@@ -244,7 +256,7 @@ def state_ratio_jvp(
                 * policy_ratio
                 * (discount * tangent_next_nu - tangent_nu)
             )
-        case FDivergence.KL | FDivergence.DUAL_DICE:
+        case FDivergence.KL | FDivergence.DUAL_DICE | FDivergence.SOFT_CHI_T:
             raise NotImplementedError(
                 f"This function is not implemented for {f_divergence}."
             )
@@ -259,9 +271,11 @@ def state_action_ratio(
     rewards: ArrayLike,
     costs: ArrayLike,
     alpha: float,
-    cost_coeff: float | ArrayLike,
+    cost_coeff: float,
     discount: float,
     f_divergence: FDivergence,
+    mu: float = 0.0,
+    t: float = 1.0,
 ) -> Array:
     if not isinstance(nu, ArrayLike):
         raise TypeError(f"Expected arraylike input; got {nu}")
@@ -277,5 +291,9 @@ def state_action_ratio(
     rewards = jnp.array(rewards)
     costs = jnp.array(costs)
 
-    e = rewards - cost_coeff * costs + discount * next_nu - nu
-    return jax.nn.relu(f_derivative_inverse(e / alpha, f_divergence))
+    if FDivergence(f_divergence) in ["SoftChi", "Chi"]:
+        e = rewards - cost_coeff * costs + discount * next_nu - nu
+        return jax.nn.relu(f_derivative_inverse(e / alpha, f_divergence))
+    else:
+        e = rewards + discount * next_nu - nu
+        return jax.nn.relu(f_derivative_inverse((e - mu * costs) / alpha, f_divergence, t=t))
