@@ -55,7 +55,7 @@ flags.DEFINE_float("cost_weight", 0.0001, "Weight of cost.")
 flags.DEFINE_float("cost_lb", 0.1, "Lower bound of cost.")
 flags.DEFINE_float("cost_ub_epsilon", 0.0, None)
 
-flags.DEFINE_string("entity", "hy-dmlab", "wandb log entity.")
+flags.DEFINE_string("entity", "", "wandb log entity.")
 
 config_flags.DEFINE_config_file(
     "config",
