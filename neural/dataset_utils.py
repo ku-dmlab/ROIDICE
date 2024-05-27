@@ -230,7 +230,6 @@ class ConstrainedD4RLDataset(ConstrainedDatasets):
         self,
         env: gym.Env,
         env_name: str,
-        cost_type: str,
         cost_weight: float,
         cost_lb: float,
         add_env: Optional[gym.Env] = None,
