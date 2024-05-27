@@ -53,7 +53,7 @@ flags.DEFINE_float("lr_ratio", 0.01, None)
 flags.DEFINE_float("gradient_penalty_coeff", 1e-5, None)
 flags.DEFINE_float("cost_weight", 0.0001, "Weight of cost.")
 flags.DEFINE_float("cost_lb", 0.1, "Lower bound of cost.")
-flags.DEFINE_float("cost_ub_epsilon", 0.0, None)
+flags.DEFINE_float("reward_scale", 1.0, "Reward scale")
 
 flags.DEFINE_string("entity", "", "wandb log entity.")
 
@@ -147,10 +147,7 @@ def main(_):
     kwargs["lr_ratio"] = FLAGS.lr_ratio
     kwargs["alg"] = alg
     kwargs["divergence"] = divergence
-    kwargs["initial_lambda"] = FLAGS.initial_lambda
-    kwargs["cost_ub"] = FLAGS.cost_ub
     kwargs["gradient_penalty_coeff"] = FLAGS.gradient_penalty_coeff
-    kwargs["cost_ub_epsilon"] = FLAGS.cost_ub_epsilon
 
     agent = Learner(
         FLAGS.seed,
