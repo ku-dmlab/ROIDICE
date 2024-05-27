@@ -113,7 +113,7 @@ def make_env_and_dataset(
     
     if isinstance(env_name, MujocoEnvironmentName):
         dataset = ConstrainedD4RLDataset(
-            env, env_name, FLAGS.cost_type, FLAGS.cost_weight, FLAGS.cost_lb
+            env, env_name, FLAGS.cost_weight, FLAGS.cost_lb
         )
     elif isinstance(env_name, FinanceEnvironmentName):
         dataset = ConstrainedFinanceDataset(
