@@ -22,7 +22,7 @@ class Walker2D(str, Enum):
 
 
 class Finance(str, Enum):
-    MEDIUM = "finance-low-100"
+    MEDIUM = "finance-medium-100"
     HIGH = "finance-high-100"
 
 
@@ -43,3 +43,4 @@ def parse_string(name: str) -> EnvironmentName:
             return Finance(name)
         case _:
             raise ValueError(f"{name} is not supported.")
+    
