@@ -53,9 +53,9 @@ flags.DEFINE_float("lr_ratio", 0.01, None)
 flags.DEFINE_float("gradient_penalty_coeff", 1e-5, None)
 flags.DEFINE_float("cost_weight", 0.0001, "Weight of cost.")
 flags.DEFINE_float("cost_lb", 0.1, "Lower bound of cost.")
-flags.DEFINE_float("reward_scale", 1.0, "Reward scale")
+flags.DEFINE_float("reward_scale", 1.0, "Reward scale.")
 
-flags.DEFINE_string("entity", "", "wandb log entity.")
+flags.DEFINE_string("entity", "hy-dmlab", "wandb log entity.")
 
 config_flags.DEFINE_config_file(
     "config",
@@ -94,7 +94,10 @@ def normalize(dataset):
 def make_env_and_dataset(
     env_name: EnvironmentName, seed: int
 ) -> Tuple[gym.Env, ConstrainedD4RLDataset | ConstrainedFinanceDataset]:
-    env = gym.make(env_name)
+    if isinstance(env_name, MujocoEnvironmentName):
+        env = gym.make(env_name)
+    elif isinstance(env_name, FinanceEnvironmentName):
+        env = neorl.make("finance")
 
     env = wrappers.EpisodeMonitor(env)
     env = wrappers.SinglePrecision(env)
@@ -167,7 +170,7 @@ def main(_):
         entity=FLAGS.entity,
         project=FLAGS.proj_name,
         group=env_name,
-        name=f"{alg}",
+        name=f"{alg}_alpha{FLAGS.alpha}",
         tags=[
             env_name,
             alg,
@@ -209,11 +212,11 @@ def main(_):
                 i - 1,
             )
 
-        if i == 1 or FLAGS.log_video and i == FLAGS.video_interval:
+        if i == 1 and FLAGS.log_video and i == FLAGS.video_interval:
             # logging args
             logging_path = os.path.join(
                 FLAGS.save_dir,
-                f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/log{i}",
+                f"{env_name}/{alg}/{divergence}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/log{i}",
             )
             record_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 
@@ -228,11 +231,11 @@ def main(_):
     ) = evaluate(env_name, agent, env, FLAGS.eval_episodes)
 
     # logging args
-    if i == 1 or FLAGS.log_video:
+    if FLAGS.log_video:
         # logging args
         logging_path = os.path.join(
             FLAGS.save_dir,
-            f"{env_name}/{alg}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/ope",
+            f"{env_name}/{alg}/{divergence}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/ope",
         )
         record_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 
