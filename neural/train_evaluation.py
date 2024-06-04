@@ -212,13 +212,14 @@ def main(_):
                 i - 1,
             )
 
-        if i == 1 and FLAGS.log_video and i == FLAGS.video_interval:
-            # logging args
-            logging_path = os.path.join(
-                FLAGS.save_dir,
-                f"{env_name}/{alg}/{divergence}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/log{i}",
-            )
-            record_video(env_name, agent, env, logging_path, FLAGS.video_steps)
+        if FLAGS.log_video and (i + 1) == FLAGS.video_interval:
+            if not isinstance(env_name, FinanceEnvironmentName):
+                # logging args
+                logging_path = os.path.join(
+                    FLAGS.save_dir,
+                    f"{env_name}/{alg}/{divergence}/alpha{FLAGS.alpha}/seed{FLAGS.seed}/log{i}",
+                )
+                record_video(env_name, agent, env, logging_path, FLAGS.video_steps)
 
     # Off-policy evaluation
     (
@@ -231,7 +232,7 @@ def main(_):
     ) = evaluate(env_name, agent, env, FLAGS.eval_episodes)
 
     # logging args
-    if FLAGS.log_video:
+    if FLAGS.log_video and not isinstance(env_name, FinanceEnvironmentName):
         # logging args
         logging_path = os.path.join(
             FLAGS.save_dir,
