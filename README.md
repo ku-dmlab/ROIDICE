@@ -1,5 +1,5 @@
 # ROIDICE: Offline Return on Investment Maximization for Efficient Decision Making
-This is the official implementation of the paper **"ROIDICE: Offline Return on Investment Maximization for Efficient Decision Making", NeurIPS 2024**.
+This is the official implementation of the paper [**"ROIDICE: Offline Return on Investment Maximization for Efficient Decision Making", NeurIPS 2024**.](https://proceedings.neurips.cc/paper_files/paper/2024/hash/178022c409938a9d634b88ce924c4b14-Abstract-Conference.html)
 
 # Requirements
 - python 3.9+
